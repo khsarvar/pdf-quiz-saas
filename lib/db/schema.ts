@@ -5,6 +5,7 @@ import {
   text,
   timestamp,
   integer,
+  jsonb,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
@@ -17,6 +18,14 @@ export const users = pgTable('users', {
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
   deletedAt: timestamp('deleted_at'),
+  // Subscription fields
+  stripeCustomerId: text('stripe_customer_id').unique(),
+  stripeSubscriptionId: text('stripe_subscription_id').unique(),
+  stripeProductId: text('stripe_product_id'),
+  planName: varchar('plan_name', { length: 50 }).default('free'),
+  subscriptionStatus: varchar('subscription_status', { length: 20 }),
+  subscriptionPeriodStart: timestamp('subscription_period_start'),
+  subscriptionPeriodEnd: timestamp('subscription_period_end'),
 });
 
 export const teams = pgTable('teams', {
@@ -77,6 +86,9 @@ export const teamsRelations = relations(teams, ({ many }) => ({
 export const usersRelations = relations(users, ({ many }) => ({
   teamMembers: many(teamMembers),
   invitationsSent: many(invitations),
+  documents: many(documents),
+  quizzes: many(quizzes),
+  usageTracking: many(usageTracking),
 }));
 
 export const invitationsRelations = relations(invitations, ({ one }) => ({
@@ -140,3 +152,127 @@ export enum ActivityType {
   INVITE_TEAM_MEMBER = 'INVITE_TEAM_MEMBER',
   ACCEPT_INVITATION = 'ACCEPT_INVITATION',
 }
+
+// Slide2Quiz tables
+export const documents = pgTable('documents', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id')
+    .notNull()
+    .references(() => users.id),
+  filename: varchar('filename', { length: 255 }).notNull(),
+  storageKey: text('storage_key').notNull(),
+  mimeType: varchar('mime_type', { length: 100 }).notNull(),
+  status: varchar('status', { length: 20 })
+    .notNull()
+    .default('uploaded'),
+  pageCount: integer('page_count'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export const extractions = pgTable('extractions', {
+  id: serial('id').primaryKey(),
+  documentId: integer('document_id')
+    .notNull()
+    .references(() => documents.id),
+  rawText: text('raw_text').notNull(),
+  method: varchar('method', { length: 50 }).notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export const quizzes = pgTable('quizzes', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id')
+    .notNull()
+    .references(() => users.id),
+  documentId: integer('document_id')
+    .notNull()
+    .references(() => documents.id),
+  title: varchar('title', { length: 255 }).notNull(),
+  status: varchar('status', { length: 20 })
+    .notNull()
+    .default('generating'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export const questions = pgTable('questions', {
+  id: serial('id').primaryKey(),
+  quizId: integer('quiz_id')
+    .notNull()
+    .references(() => quizzes.id),
+  type: varchar('type', { length: 50 }).notNull().default('multiple_choice'),
+  prompt: text('prompt').notNull(),
+  choices: jsonb('choices'),
+  answer: jsonb('answer'),
+  explanation: text('explanation'),
+  sourceRef: jsonb('source_ref'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+// Relations for Slide2Quiz tables
+export const documentsRelations = relations(documents, ({ one, many }) => ({
+  user: one(users, {
+    fields: [documents.userId],
+    references: [users.id],
+  }),
+  extractions: many(extractions),
+  quizzes: many(quizzes),
+}));
+
+export const extractionsRelations = relations(extractions, ({ one }) => ({
+  document: one(documents, {
+    fields: [extractions.documentId],
+    references: [documents.id],
+  }),
+}));
+
+export const quizzesRelations = relations(quizzes, ({ one, many }) => ({
+  user: one(users, {
+    fields: [quizzes.userId],
+    references: [users.id],
+  }),
+  document: one(documents, {
+    fields: [quizzes.documentId],
+    references: [documents.id],
+  }),
+  questions: many(questions),
+}));
+
+export const questionsRelations = relations(questions, ({ one }) => ({
+  quiz: one(quizzes, {
+    fields: [questions.quizId],
+    references: [quizzes.id],
+  }),
+}));
+
+// Usage tracking table
+export const usageTracking = pgTable('usage_tracking', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id')
+    .notNull()
+    .references(() => users.id),
+  periodStart: timestamp('period_start').notNull(),
+  periodEnd: timestamp('period_end').notNull(),
+  documentUploads: integer('document_uploads').notNull().default(0),
+  quizGenerations: integer('quiz_generations').notNull().default(0),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+export const usageTrackingRelations = relations(usageTracking, ({ one }) => ({
+  user: one(users, {
+    fields: [usageTracking.userId],
+    references: [users.id],
+  }),
+}));
+
+// Type exports for Slide2Quiz tables
+export type Document = typeof documents.$inferSelect;
+export type NewDocument = typeof documents.$inferInsert;
+export type Extraction = typeof extractions.$inferSelect;
+export type NewExtraction = typeof extractions.$inferInsert;
+export type Quiz = typeof quizzes.$inferSelect;
+export type NewQuiz = typeof quizzes.$inferInsert;
+export type Question = typeof questions.$inferSelect;
+export type NewQuestion = typeof questions.$inferInsert;
+export type UsageTracking = typeof usageTracking.$inferSelect;
+export type NewUsageTracking = typeof usageTracking.$inferInsert;

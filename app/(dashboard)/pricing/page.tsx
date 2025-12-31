@@ -2,6 +2,7 @@ import { checkoutAction } from '@/lib/payments/actions';
 import { Check } from 'lucide-react';
 import { getStripePrices, getStripeProducts } from '@/lib/payments/stripe';
 import { SubmitButton } from './submit-button';
+import { PLANS } from '@/lib/subscriptions/plans';
 
 // Prices are fresh for one hour max
 export const revalidate = 3600;
@@ -12,38 +13,56 @@ export default async function PricingPage() {
     getStripeProducts(),
   ]);
 
-  const basePlan = products.find((product) => product.name === 'Base');
-  const plusPlan = products.find((product) => product.name === 'Plus');
+  const freePlan = { name: 'Free', price: 0, features: PLANS.free };
+  const plusPlan = products.find((product) => product.name.toLowerCase().includes('plus'));
+  const proPlan = products.find((product) => product.name.toLowerCase().includes('pro'));
 
-  const basePrice = prices.find((price) => price.productId === basePlan?.id);
   const plusPrice = prices.find((price) => price.productId === plusPlan?.id);
+  const proPrice = prices.find((price) => price.productId === proPlan?.id);
 
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-      <div className="grid md:grid-cols-2 gap-8 max-w-xl mx-auto">
+      <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
         <PricingCard
-          name={basePlan?.name || 'Base'}
-          price={basePrice?.unitAmount || 800}
-          interval={basePrice?.interval || 'month'}
-          trialDays={basePrice?.trialPeriodDays || 7}
+          name="Free"
+          price={0}
+          interval="month"
           features={[
-            'Unlimited Usage',
-            'Unlimited Workspace Members',
-            'Email Support',
+            '2 document uploads (lifetime)',
+            '2 quiz generations (lifetime)',
+            '10 questions per quiz',
+            'Basic support',
           ]}
-          priceId={basePrice?.id}
+          priceId={undefined}
+          highlight={false}
         />
         <PricingCard
           name={plusPlan?.name || 'Plus'}
-          price={plusPrice?.unitAmount || 1200}
+          price={plusPrice?.unitAmount || PLANS.plus.price}
           interval={plusPrice?.interval || 'month'}
-          trialDays={plusPrice?.trialPeriodDays || 7}
           features={[
-            'Everything in Base, and:',
-            'Early Access to New Features',
-            '24/7 Support + Slack Access',
+            '30 document uploads per period',
+            '30 quiz generations per period',
+            '20 questions per quiz',
+            'Regenerate quizzes',
+            'Email support',
           ]}
           priceId={plusPrice?.id}
+          highlight={true}
+        />
+        <PricingCard
+          name={proPlan?.name || 'Pro'}
+          price={proPrice?.unitAmount || PLANS.pro.price}
+          interval={proPrice?.interval || 'month'}
+          features={[
+            '200 document uploads per period',
+            '200 quiz generations per period',
+            '20 questions per quiz',
+            'Regenerate quizzes',
+            'Priority support',
+          ]}
+          priceId={proPrice?.id}
+          highlight={false}
         />
       </div>
     </main>
@@ -54,28 +73,33 @@ function PricingCard({
   name,
   price,
   interval,
-  trialDays,
   features,
   priceId,
+  highlight,
 }: {
   name: string;
   price: number;
   interval: string;
-  trialDays: number;
   features: string[];
   priceId?: string;
+  highlight?: boolean;
 }) {
+  const isFree = price === 0;
+  
   return (
-    <div className="pt-6">
+    <div className={`pt-6 ${highlight ? 'border-2 border-orange-500 rounded-lg p-4' : ''}`}>
       <h2 className="text-2xl font-medium text-gray-900 mb-2">{name}</h2>
-      <p className="text-sm text-gray-600 mb-4">
-        with {trialDays} day free trial
-      </p>
       <p className="text-4xl font-medium text-gray-900 mb-6">
-        ${price / 100}{' '}
-        <span className="text-xl font-normal text-gray-600">
-          per user / {interval}
-        </span>
+        {isFree ? (
+          'Free'
+        ) : (
+          <>
+            ${price / 100}{' '}
+            <span className="text-xl font-normal text-gray-600">
+              / {interval}
+            </span>
+          </>
+        )}
       </p>
       <ul className="space-y-4 mb-8">
         {features.map((feature, index) => (
@@ -85,10 +109,17 @@ function PricingCard({
           </li>
         ))}
       </ul>
-      <form action={checkoutAction}>
-        <input type="hidden" name="priceId" value={priceId} />
-        <SubmitButton />
-      </form>
+      {!isFree && priceId && (
+        <form action={checkoutAction}>
+          <input type="hidden" name="priceId" value={priceId} />
+          <SubmitButton />
+        </form>
+      )}
+      {isFree && (
+        <div className="text-center text-gray-500 text-sm">
+          Current plan
+        </div>
+      )}
     </div>
   );
 }

@@ -46,6 +46,36 @@ Use the included setup script to create your `.env` file:
 pnpm db:setup
 ```
 
+After running the setup script, you'll need to manually add your OpenAI API key and R2 configuration to the `.env` file:
+
+```bash
+OPENAI_API_KEY=your_openai_api_key_here
+```
+
+You can get an API key from [OpenAI's platform](https://platform.openai.com/api-keys). Optionally, you can also set:
+
+```bash
+OPENAI_MODEL=gpt-4o-mini  # or gpt-4o, gpt-4-turbo, etc.
+```
+
+### Configure Cloudflare R2 Storage
+
+This application uses Cloudflare R2 for direct-to-storage file uploads. You'll need to set up an R2 bucket and add the following environment variables:
+
+```bash
+R2_ACCOUNT_ID=your_cloudflare_account_id
+R2_ACCESS_KEY_ID=your_r2_access_key_id
+R2_SECRET_ACCESS_KEY=your_r2_secret_access_key
+R2_BUCKET_NAME=your_bucket_name
+R2_PUBLIC_URL=https://your-bucket.r2.dev  # Optional: if using a custom domain
+```
+
+To get your R2 credentials:
+1. Go to [Cloudflare Dashboard](https://dash.cloudflare.com/) → R2 → Manage R2 API Tokens
+2. Create an API token with Object Read & Write permissions
+3. Your Account ID can be found in the R2 dashboard URL or in your Cloudflare account settings
+4. Create an R2 bucket in the dashboard
+
 Run the database migrations and seed the database with a default user and team:
 
 ```bash
@@ -107,6 +137,13 @@ In your Vercel project settings (or during deployment), add all the necessary en
 3. `STRIPE_WEBHOOK_SECRET`: Use the webhook secret from the production webhook you created in step 1.
 4. `POSTGRES_URL`: Set this to your production database URL.
 5. `AUTH_SECRET`: Set this to a random string. `openssl rand -base64 32` will generate one.
+6. `OPENAI_API_KEY`: Your OpenAI API key for quiz question generation. Get one at https://platform.openai.com/api-keys
+7. `OPENAI_MODEL` (optional): The OpenAI model to use (defaults to `gpt-4o-mini`). Options include `gpt-4o`, `gpt-4o-mini`, `gpt-4-turbo`, etc.
+8. `R2_ACCOUNT_ID`: Your Cloudflare Account ID
+9. `R2_ACCESS_KEY_ID`: Your R2 Access Key ID
+10. `R2_SECRET_ACCESS_KEY`: Your R2 Secret Access Key
+11. `R2_BUCKET_NAME`: Your R2 bucket name
+12. `R2_PUBLIC_URL` (optional): Public URL for your R2 bucket if using a custom domain
 
 ## Other Templates
 

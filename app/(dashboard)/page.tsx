@@ -1,8 +1,13 @@
 import { Button } from '@/components/ui/button';
 import { ArrowRight, CreditCard, Database } from 'lucide-react';
 import { Terminal } from './terminal';
+import Link from 'next/link';
+import { getUser } from '@/lib/db/queries';
 
-export default function HomePage() {
+export default async function HomePage() {
+  const user = await getUser();
+  const getStartedHref = user ? '/dashboard' : '/sign-up';
+  const getStartedText = user ? 'Go to Dashboard' : 'Get Started';
   return (
     <main>
       <section className="py-20">
@@ -10,28 +15,25 @@ export default function HomePage() {
           <div className="lg:grid lg:grid-cols-12 lg:gap-8">
             <div className="sm:text-center md:max-w-2xl md:mx-auto lg:col-span-6 lg:text-left">
               <h1 className="text-4xl font-bold text-gray-900 tracking-tight sm:text-5xl md:text-6xl">
-                Build Your SaaS
-                <span className="block text-orange-500">Faster Than Ever</span>
+                Transform Slides
+                <span className="block text-orange-500">Into Quizzes</span>
               </h1>
               <p className="mt-3 text-base text-gray-500 sm:mt-5 sm:text-xl lg:text-lg xl:text-xl">
-                Launch your SaaS product in record time with our powerful,
-                ready-to-use template. Packed with modern technologies and
-                essential integrations.
+                Upload your lecture slides and let AI generate interactive quizzes
+                to help students learn and retain information more effectively.
               </p>
               <div className="mt-8 sm:max-w-lg sm:mx-auto sm:text-center lg:text-left lg:mx-0">
-                <a
-                  href="https://vercel.com/templates/next.js/next-js-saas-starter"
-                  target="_blank"
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="text-lg rounded-full"
+                  asChild
                 >
-                  <Button
-                    size="lg"
-                    variant="outline"
-                    className="text-lg rounded-full"
-                  >
-                    Deploy your own
+                  <Link href={getStartedHref}>
+                    {getStartedText}
                     <ArrowRight className="ml-2 h-5 w-5" />
-                  </Button>
-                </a>
+                  </Link>
+                </Button>
               </div>
             </div>
             <div className="mt-12 relative sm:max-w-lg sm:mx-auto lg:mt-0 lg:max-w-none lg:mx-0 lg:col-span-6 lg:flex lg:items-center">
@@ -55,11 +57,11 @@ export default function HomePage() {
               </div>
               <div className="mt-5">
                 <h2 className="text-lg font-medium text-gray-900">
-                  Next.js and React
+                  Upload & Extract
                 </h2>
                 <p className="mt-2 text-base text-gray-500">
-                  Leverage the power of modern web technologies for optimal
-                  performance and developer experience.
+                  Upload PDF or PPTX files and automatically extract text from
+                  your lecture slides.
                 </p>
               </div>
             </div>
@@ -70,11 +72,11 @@ export default function HomePage() {
               </div>
               <div className="mt-5">
                 <h2 className="text-lg font-medium text-gray-900">
-                  Postgres and Drizzle ORM
+                  AI-Powered Generation
                 </h2>
                 <p className="mt-2 text-base text-gray-500">
-                  Robust database solution with an intuitive ORM for efficient
-                  data management and scalability.
+                  Generate multiple-choice questions automatically using advanced
+                  AI to test comprehension and retention.
                 </p>
               </div>
             </div>
@@ -85,11 +87,11 @@ export default function HomePage() {
               </div>
               <div className="mt-5">
                 <h2 className="text-lg font-medium text-gray-900">
-                  Stripe Integration
+                  Review & Take Quizzes
                 </h2>
                 <p className="mt-2 text-base text-gray-500">
-                  Seamless payment processing and subscription management with
-                  industry-leading Stripe integration.
+                  Edit generated questions, review answers, and take quizzes
+                  to test your knowledge with instant feedback.
                 </p>
               </div>
             </div>
@@ -102,25 +104,22 @@ export default function HomePage() {
           <div className="lg:grid lg:grid-cols-2 lg:gap-8 lg:items-center">
             <div>
               <h2 className="text-3xl font-bold text-gray-900 sm:text-4xl">
-                Ready to launch your SaaS?
+                Ready to transform your slides?
               </h2>
               <p className="mt-3 max-w-3xl text-lg text-gray-500">
-                Our template provides everything you need to get your SaaS up
-                and running quickly. Don't waste time on boilerplate - focus on
-                what makes your product unique.
+                Start creating interactive quizzes from your lecture materials
+                in minutes. Upload your slides and let AI do the rest.
               </p>
             </div>
             <div className="mt-8 lg:mt-0 flex justify-center lg:justify-end">
-              <a href="https://github.com/nextjs/saas-starter" target="_blank">
-                <Button
-                  size="lg"
-                  variant="outline"
-                  className="text-lg rounded-full"
-                >
-                  View the code
-                  <ArrowRight className="ml-3 h-6 w-6" />
-                </Button>
-              </a>
+              <Button
+                size="lg"
+                variant="outline"
+                className="text-lg rounded-full"
+                asChild
+              >
+                <Link href={getStartedHref}>{getStartedText}</Link>
+              </Button>
             </div>
           </div>
         </div>

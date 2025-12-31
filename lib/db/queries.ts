@@ -1,6 +1,15 @@
 import { desc, and, eq, isNull } from 'drizzle-orm';
 import { db } from './drizzle';
-import { activityLogs, teamMembers, teams, users } from './schema';
+import {
+  activityLogs,
+  teamMembers,
+  teams,
+  users,
+  documents,
+  quizzes,
+  questions,
+  extractions,
+} from './schema';
 import { cookies } from 'next/headers';
 import { verifyToken } from '@/lib/auth/session';
 
@@ -62,6 +71,38 @@ export async function updateTeamSubscription(
       updatedAt: new Date()
     })
     .where(eq(teams.id, teamId));
+}
+
+// User subscription queries
+export async function getUserByStripeCustomerId(customerId: string) {
+  const result = await db
+    .select()
+    .from(users)
+    .where(eq(users.stripeCustomerId, customerId))
+    .limit(1);
+
+  return result.length > 0 ? result[0] : null;
+}
+
+export async function updateUserSubscription(
+  userId: number,
+  subscriptionData: {
+    stripeCustomerId?: string | null;
+    stripeSubscriptionId: string | null;
+    stripeProductId: string | null;
+    planName: string | null;
+    subscriptionStatus: string;
+    subscriptionPeriodStart?: Date | null;
+    subscriptionPeriodEnd?: Date | null;
+  }
+) {
+  await db
+    .update(users)
+    .set({
+      ...subscriptionData,
+      updatedAt: new Date()
+    })
+    .where(eq(users.id, userId));
 }
 
 export async function getUserWithTeam(userId: number) {
@@ -127,4 +168,143 @@ export async function getTeamForUser() {
   });
 
   return result?.team || null;
+}
+
+// Document queries
+export async function getDocumentsForUser() {
+  const user = await getUser();
+  if (!user) {
+    return [];
+  }
+
+  const result = await db
+    .select({
+      id: documents.id,
+      userId: documents.userId,
+      filename: documents.filename,
+      storageKey: documents.storageKey,
+      mimeType: documents.mimeType,
+      status: documents.status,
+      pageCount: documents.pageCount,
+      createdAt: documents.createdAt,
+      quizId: quizzes.id,
+      quizCreatedAt: quizzes.createdAt,
+    })
+    .from(documents)
+    .leftJoin(quizzes, eq(quizzes.documentId, documents.id))
+    .where(eq(documents.userId, user.id))
+    .orderBy(desc(documents.createdAt), desc(quizzes.createdAt));
+
+  // Group by document ID and take the first quiz (most recent) if multiple exist
+  const documentsMap = new Map();
+  for (const row of result) {
+    if (!documentsMap.has(row.id)) {
+      documentsMap.set(row.id, {
+        id: row.id,
+        userId: row.userId,
+        filename: row.filename,
+        storageKey: row.storageKey,
+        mimeType: row.mimeType,
+        status: row.status,
+        pageCount: row.pageCount,
+        createdAt: row.createdAt,
+        quizId: row.quizId,
+      });
+    }
+  }
+
+  return Array.from(documentsMap.values());
+}
+
+export async function getDocumentById(documentId: number) {
+  const user = await getUser();
+  if (!user) {
+    return null;
+  }
+
+  const result = await db
+    .select()
+    .from(documents)
+    .where(and(eq(documents.id, documentId), eq(documents.userId, user.id)))
+    .limit(1);
+
+  return result.length > 0 ? result[0] : null;
+}
+
+// Quiz queries
+export async function getQuizzesForUser() {
+  const user = await getUser();
+  if (!user) {
+    return [];
+  }
+
+  return await db
+    .select()
+    .from(quizzes)
+    .where(eq(quizzes.userId, user.id))
+    .orderBy(desc(quizzes.createdAt));
+}
+
+export async function getQuizForDocument(documentId: number) {
+  const user = await getUser();
+  if (!user) {
+    return null;
+  }
+
+  const result = await db
+    .select()
+    .from(quizzes)
+    .where(and(eq(quizzes.documentId, documentId), eq(quizzes.userId, user.id)))
+    .orderBy(desc(quizzes.createdAt))
+    .limit(1);
+
+  return result.length > 0 ? result[0] : null;
+}
+
+export async function getQuizById(quizId: number) {
+  const user = await getUser();
+  if (!user) {
+    return null;
+  }
+
+  const result = await db
+    .select()
+    .from(quizzes)
+    .where(and(eq(quizzes.id, quizId), eq(quizzes.userId, user.id)))
+    .limit(1);
+
+  return result.length > 0 ? result[0] : null;
+}
+
+export async function getQuestionsForQuiz(quizId: number) {
+  return await db
+    .select()
+    .from(questions)
+    .where(eq(questions.quizId, quizId))
+    .orderBy(questions.id);
+}
+
+export async function getQuizWithQuestions(quizId: number) {
+  const quiz = await getQuizById(quizId);
+  if (!quiz) {
+    return null;
+  }
+
+  const questionsList = await getQuestionsForQuiz(quizId);
+  return {
+    ...quiz,
+    questions: questionsList,
+  };
+}
+
+// Extraction queries
+export async function getExtractionForDocument(documentId: number) {
+  const result = await db
+    .select()
+    .from(extractions)
+    .where(eq(extractions.documentId, documentId))
+    .orderBy(desc(extractions.createdAt))
+    .limit(1);
+
+  return result.length > 0 ? result[0] : null;
 }

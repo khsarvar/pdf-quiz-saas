@@ -1,10 +1,16 @@
 import { eq } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
-import { users, teams, teamMembers } from '@/lib/db/schema';
+import { users } from '@/lib/db/schema';
 import { setSession } from '@/lib/auth/session';
 import { NextRequest, NextResponse } from 'next/server';
 import { stripe } from '@/lib/payments/stripe';
 import Stripe from 'stripe';
+import { updateUserSubscription } from '@/lib/db/queries';
+
+function unixSecondsToDate(seconds: number) {
+  const date = new Date(seconds * 1000);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -37,13 +43,16 @@ export async function GET(request: NextRequest) {
       expand: ['items.data.price.product'],
     });
 
-    const plan = subscription.items.data[0]?.price;
+    const item = subscription.items.data[0];
+    const plan = item?.price;
 
-    if (!plan) {
+    if (!item || !plan) {
       throw new Error('No plan found for this subscription.');
     }
 
-    const productId = (plan.product as Stripe.Product).id;
+    const product = plan.product as Stripe.Product;
+    const productId = typeof product === 'string' ? product : product.id;
+    const productName = typeof product === 'string' ? product : product.name;
 
     if (!productId) {
       throw new Error('No product ID found for this subscription.');
@@ -64,34 +73,32 @@ export async function GET(request: NextRequest) {
       throw new Error('User not found in database.');
     }
 
-    const userTeam = await db
-      .select({
-        teamId: teamMembers.teamId,
-      })
-      .from(teamMembers)
-      .where(eq(teamMembers.userId, user[0].id))
-      .limit(1);
-
-    if (userTeam.length === 0) {
-      throw new Error('User is not associated with any team.');
+    // Determine plan name from product name
+    let planName = 'free';
+    if (productName?.toLowerCase().includes('plus')) {
+      planName = 'plus';
+    } else if (productName?.toLowerCase().includes('pro')) {
+      planName = 'pro';
     }
 
-    await db
-      .update(teams)
-      .set({
-        stripeCustomerId: customerId,
-        stripeSubscriptionId: subscriptionId,
-        stripeProductId: productId,
-        planName: (plan.product as Stripe.Product).name,
-        subscriptionStatus: subscription.status,
-        updatedAt: new Date(),
-      })
-      .where(eq(teams.id, userTeam[0].teamId));
+    // Calculate period dates
+    const periodStart = unixSecondsToDate(item.current_period_start);
+    const periodEnd = unixSecondsToDate(item.current_period_end);
+
+    await updateUserSubscription(user[0].id, {
+      stripeCustomerId: customerId,
+      stripeSubscriptionId: subscriptionId,
+      stripeProductId: productId,
+      planName: planName,
+      subscriptionStatus: subscription.status,
+      subscriptionPeriodStart: periodStart,
+      subscriptionPeriodEnd: periodEnd,
+    });
 
     await setSession(user[0]);
     return NextResponse.redirect(new URL('/dashboard', request.url));
   } catch (error) {
     console.error('Error handling successful checkout:', error);
-    return NextResponse.redirect(new URL('/error', request.url));
+    return NextResponse.redirect(new URL('/pricing?checkout=error', request.url));
   }
 }
