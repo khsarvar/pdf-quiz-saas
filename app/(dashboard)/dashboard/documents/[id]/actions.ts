@@ -18,20 +18,18 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { checkQuizGenerationLimit, incrementQuizGeneration, getPlanConfig } from '@/lib/subscriptions/usage';
 
+export type GenerateQuizState = { error?: string; quizId?: number };
+
 export async function generateQuiz(
-  prevStateOrFormData: { error?: string; quizId?: number } | FormData,
-  formData?: FormData
-) {
+  _prevState: GenerateQuizState,
+  formData: FormData
+): Promise<GenerateQuizState> {
   const user = await getUser();
   if (!user) {
     return { error: 'User is not authenticated' };
   }
 
-  // Handle both calling patterns:
-  // 1. Direct form action: generateQuiz(formData)
-  // 2. useActionState: generateQuiz(prevState, formData)
-  const actualFormData = formData || (prevStateOrFormData as FormData);
-  const documentIdStr = actualFormData.get('documentId') as string;
+  const documentIdStr = formData.get('documentId') as string;
   const documentId = parseInt(documentIdStr);
   
   if (isNaN(documentId)) {

@@ -1,7 +1,7 @@
 import { db } from '@/lib/db/drizzle';
 import { users, usageTracking, documents, quizzes } from '@/lib/db/schema';
 import { eq, and, gte, lte, desc } from 'drizzle-orm';
-import { PLANS, type PlanName } from './plans';
+import { PLANS, type Plan, type PlanName } from './plans';
 import type { User } from '@/lib/db/schema';
 
 export function getUserPlan(user: User): PlanName {
@@ -9,7 +9,7 @@ export function getUserPlan(user: User): PlanName {
   return planName in PLANS ? planName : 'free';
 }
 
-export function getPlanConfig(user: User) {
+export function getPlanConfig(user: User): Plan {
   return PLANS[getUserPlan(user)];
 }
 
@@ -217,6 +217,9 @@ export async function incrementDocumentUpload(user: User) {
   }
 
   const usage = await getCurrentUsagePeriod(user);
+  if (!('id' in usage)) {
+    return;
+  }
   await db
     .update(usageTracking)
     .set({
@@ -238,6 +241,9 @@ export async function incrementQuizGeneration(user: User) {
   }
 
   const usage = await getCurrentUsagePeriod(user);
+  if (!('id' in usage)) {
+    return;
+  }
   await db
     .update(usageTracking)
     .set({
@@ -330,4 +336,3 @@ export async function getUserUsageStats(user: User) {
     periodEnd: usage.periodEnd,
   };
 }
-

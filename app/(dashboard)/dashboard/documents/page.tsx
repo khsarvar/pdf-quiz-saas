@@ -8,8 +8,8 @@ import useSWR from 'swr';
 import { Document } from '@/lib/db/schema';
 
 type DocumentWithQuiz = Document & { quizId?: number | null };
-import { Suspense, useState } from 'react';
-import { generateQuiz } from './[id]/actions';
+import { Suspense, useActionState } from 'react';
+import { generateQuiz, type GenerateQuizState } from './[id]/actions';
 
 type UsageStats = {
   plan: string;
@@ -59,8 +59,11 @@ function getStatusLabel(status: string) {
 }
 
 function GenerateQuizButton({ documentId, quizId }: { documentId: number; quizId?: number | null }) {
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const initialState: GenerateQuizState = {};
+  const [state, formAction, isPending] = useActionState<GenerateQuizState, FormData>(
+    generateQuiz,
+    initialState
+  );
 
   // If quiz already exists, show "View Quiz" button
   if (quizId) {
@@ -78,39 +81,17 @@ function GenerateQuizButton({ documentId, quizId }: { documentId: number; quizId
     );
   }
 
-  async function handleGenerate() {
-    setIsGenerating(true);
-    setError(null);
-    
-    const formData = new FormData();
-    formData.append('documentId', documentId.toString());
-    
-    try {
-      await generateQuiz({}, formData);
-      // If we get here, redirect happened (shouldn't happen)
-    } catch (err: any) {
-      // Server actions throw on redirect, so we catch and check
-      if (err?.digest?.startsWith('NEXT_REDIRECT')) {
-        // Redirect is happening, this is expected
-        return;
-      }
-      setError(err?.message || 'Failed to generate quiz');
-    } finally {
-      setIsGenerating(false);
-    }
-  }
-
   return (
     <div>
-      <form action={generateQuiz}>
+      <form action={formAction}>
         <input type="hidden" name="documentId" value={documentId} />
         <Button
           type="submit"
           size="sm"
-          disabled={isGenerating}
+          disabled={isPending}
           className="bg-orange-500 hover:bg-orange-600 text-white"
         >
-          {isGenerating ? (
+          {isPending ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               Generating...
@@ -123,8 +104,8 @@ function GenerateQuizButton({ documentId, quizId }: { documentId: number; quizId
           )}
         </Button>
       </form>
-      {error && (
-        <p className="text-xs text-red-500 mt-1">{error}</p>
+      {state?.error && (
+        <p className="text-xs text-red-500 mt-1">{state.error}</p>
       )}
     </div>
   );
@@ -360,4 +341,3 @@ export default function DocumentsPage() {
     </section>
   );
 }
-

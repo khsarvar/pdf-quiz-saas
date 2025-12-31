@@ -1,3 +1,12 @@
+export type Plan = {
+  name: string;
+  price: number;
+  documentUploads: number;
+  quizGenerations: number;
+  canRegenerateQuizzes: boolean;
+  questionsPerQuiz: number;
+};
+
 export const PLANS = {
   free: {
     name: 'Free',
@@ -23,8 +32,6 @@ export const PLANS = {
     canRegenerateQuizzes: true,
     questionsPerQuiz: 20, // 10 base + 10 additional
   },
-} as const;
+} as const satisfies Record<string, Plan>;
 
 export type PlanName = keyof typeof PLANS;
-export type Plan = typeof PLANS[PlanName];
-

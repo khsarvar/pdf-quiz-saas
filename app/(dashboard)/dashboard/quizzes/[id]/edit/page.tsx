@@ -8,7 +8,7 @@ import { ArrowLeft, Save, Trash2, Plus } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import useSWR, { mutate } from 'swr';
-import { Suspense, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { updateQuestion, deleteQuestion } from './actions';
 import { useActionState } from 'react';
 
@@ -49,10 +49,23 @@ function QuestionEditor({
   const [answer, setAnswer] = useState(question.answer ?? 0);
   const [explanation, setExplanation] = useState(question.explanation || '');
   const [isEditing, setIsEditing] = useState(false);
-  const [updateState, updateAction, isUpdating] = useActionState(updateQuestion, {});
-  const [deleteState, deleteAction, isDeleting] = useActionState(deleteQuestion, {});
+  const [updateState, updateAction, isUpdating] = useActionState(updateQuestion, { error: '' });
+  const [deleteState, deleteAction, isDeleting] = useActionState(deleteQuestion, { error: '' });
 
-  const handleSave = async (formData: FormData) => {
+  useEffect(() => {
+    if ('success' in updateState && updateState.success) {
+      setIsEditing(false);
+      mutate(`/api/quizzes/${quizId}`);
+    }
+  }, [quizId, updateState]);
+
+  useEffect(() => {
+    if ('success' in deleteState && deleteState.success) {
+      mutate(`/api/quizzes/${quizId}`);
+    }
+  }, [deleteState, quizId]);
+
+  const handleSave = (formData: FormData) => {
     formData.append('questionId', question.id.toString());
     formData.append('quizId', quizId.toString());
     formData.append('prompt', prompt);
@@ -60,24 +73,17 @@ function QuestionEditor({
     formData.append('answer', answer.toString());
     formData.append('explanation', explanation);
 
-    const result = await updateAction(formData);
-    if (result?.success) {
-      setIsEditing(false);
-      mutate(`/api/quizzes/${quizId}`);
-    }
+    updateAction(formData);
   };
 
-  const handleDelete = async (formData: FormData) => {
+  const handleDelete = (formData: FormData) => {
     if (!confirm('Are you sure you want to delete this question?')) {
       return;
     }
     formData.append('questionId', question.id.toString());
     formData.append('quizId', quizId.toString());
     
-    const result = await deleteAction(formData);
-    if (result?.success) {
-      mutate(`/api/quizzes/${quizId}`);
-    }
+    deleteAction(formData);
   };
 
   if (!isEditing) {
@@ -352,4 +358,3 @@ export default function QuizEditPage() {
     </section>
   );
 }
-
