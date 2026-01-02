@@ -7,6 +7,7 @@ import {
   quizzes,
   questions,
   extractions,
+  documentChunks,
 } from './schema';
 import { cookies } from 'next/headers';
 import { verifyToken } from '@/lib/auth/session';
@@ -233,4 +234,31 @@ export async function getExtractionForDocument(documentId: number) {
     .limit(1);
 
   return result.length > 0 ? result[0] : null;
+}
+
+// Document chunk queries
+export async function getChunksForDocument(documentId: number) {
+  return await db
+    .select()
+    .from(documentChunks)
+    .where(eq(documentChunks.documentId, documentId))
+    .orderBy(documentChunks.chunkIndex);
+}
+
+export async function getChunksForExtraction(extractionId: number) {
+  return await db
+    .select()
+    .from(documentChunks)
+    .where(eq(documentChunks.extractionId, extractionId))
+    .orderBy(documentChunks.chunkIndex);
+}
+
+export async function hasChunksForExtraction(extractionId: number): Promise<boolean> {
+  const result = await db
+    .select()
+    .from(documentChunks)
+    .where(eq(documentChunks.extractionId, extractionId))
+    .limit(1);
+
+  return result.length > 0;
 }

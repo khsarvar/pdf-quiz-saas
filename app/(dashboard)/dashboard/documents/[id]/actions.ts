@@ -6,13 +6,17 @@ import {
   quizzes,
   questions,
   extractions,
+  documentChunks,
   type NewQuiz,
   type NewQuestion,
   type NewExtraction,
+  type NewDocumentChunk,
 } from '@/lib/db/schema';
-import { getUser, getDocumentById, getExtractionForDocument, getQuizForDocument } from '@/lib/db/queries';
+import { getUser, getDocumentById, getExtractionForDocument, getQuizForDocument, hasChunksForExtraction } from '@/lib/db/queries';
 import { extractTextFromDocument } from '@/lib/extraction';
 import { generateQuestions } from '@/lib/generation';
+import { chunkDocument, estimateTokenCount } from '@/lib/chunking';
+import { generateEmbeddings } from '@/lib/embeddings';
 import { eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
@@ -113,9 +117,73 @@ export async function generateQuiz(
         .returning();
     }
 
+    // Process chunks: chunk the text, generate embeddings, and store
+    // Check if chunks already exist for this extraction
+    const chunksExist = extraction ? await hasChunksForExtraction(extraction.id) : false;
+    
+    if (!chunksExist && extraction) {
+      console.log('[chunking] Starting chunk processing for extraction', extraction.id);
+      console.log('[chunking] Extracted text length:', extractedText.length);
+      
+      // Chunk the document
+      const chunks = chunkDocument(extractedText);
+      console.log('[chunking] Created', chunks.length, 'chunks');
+
+      if (chunks.length === 0) {
+        console.warn('[chunking] No chunks created - text may be too short or empty');
+        // For very short documents, create a single chunk even if it's small
+        if (extractedText.trim().length > 0) {
+          const singleChunk = [{
+            text: extractedText.trim(),
+            index: 0,
+            startChar: 0,
+            endChar: extractedText.trim().length,
+          }];
+          console.log('[chunking] Creating single chunk for short document');
+          
+          // Generate embedding for the single chunk
+          const embeddings = await generateEmbeddings([singleChunk[0].text]);
+          
+          const newChunks: NewDocumentChunk[] = [{
+            documentId,
+            extractionId: extraction.id,
+            chunkIndex: 0,
+            text: singleChunk[0].text,
+            embedding: embeddings[0] as any,
+            tokenCount: estimateTokenCount(singleChunk[0].text),
+          }];
+          
+          await db.insert(documentChunks).values(newChunks);
+          console.log('[chunking] Stored single chunk in database');
+        } else {
+          throw new Error('Extracted text is empty. Cannot create chunks.');
+        }
+      } else if (chunks.length > 0) {
+        // Generate embeddings for all chunks
+        const chunkTexts = chunks.map((chunk) => chunk.text);
+        console.log('[embeddings] Generating embeddings for', chunkTexts.length, 'chunks');
+        const embeddings = await generateEmbeddings(chunkTexts);
+        console.log('[embeddings] Generated', embeddings.length, 'embeddings');
+
+        // Store chunks in database
+        const newChunks: NewDocumentChunk[] = chunks.map((chunk, index) => ({
+          documentId,
+          extractionId: extraction.id,
+          chunkIndex: chunk.index,
+          text: chunk.text,
+          embedding: embeddings[index] as any, // Custom type handles conversion
+          tokenCount: estimateTokenCount(chunk.text),
+        }));
+
+        await db.insert(documentChunks).values(newChunks);
+        console.log('[chunking] Stored', newChunks.length, 'chunks in database');
+      }
+    }
+
     // Generate questions using LLM with plan-specific count
+    // Now using RAG - generateQuestions will retrieve chunks instead of using raw text
     const questionCount = plan.questionsPerQuiz;
-    const generatedQuestions = await generateQuestions(extractedText, questionCount);
+    const generatedQuestions = await generateQuestions(documentId, questionCount);
 
     // Create quiz
     const newQuiz: NewQuiz = {

@@ -6,8 +6,33 @@ import {
   timestamp,
   integer,
   jsonb,
+  customType,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
+
+// Custom type for pgvector
+// Note: pgvector stores vectors as arrays in PostgreSQL
+// When inserting, we pass the array directly and PostgreSQL handles conversion
+// When reading, PostgreSQL returns the vector as a string representation
+const vector = customType<{ data: number[]; driverData: string }>({
+  dataType() {
+    return 'vector(1536)';
+  },
+  toDriver(value: number[]): string {
+    // Convert array to pgvector format: [1,2,3]
+    // PostgreSQL will parse this string representation
+    return `[${value.join(',')}]`;
+  },
+  fromDriver(value: string | number[]): number[] {
+    // Handle both string and array inputs
+    if (Array.isArray(value)) {
+      return value;
+    }
+    // Remove brackets and parse string representation
+    const cleaned = String(value).replace(/[\[\]]/g, '');
+    return cleaned.split(',').map((v) => parseFloat(v.trim())).filter((v) => !isNaN(v));
+  },
+});
 
 export const users = pgTable('users', {
   id: serial('id').primaryKey(),
@@ -92,6 +117,19 @@ export const extractions = pgTable('extractions', {
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
 
+export const documentChunks = pgTable('document_chunks', {
+  id: serial('id').primaryKey(),
+  documentId: integer('document_id')
+    .notNull()
+    .references(() => documents.id),
+  extractionId: integer('extraction_id').references(() => extractions.id),
+  chunkIndex: integer('chunk_index').notNull(),
+  text: text('text').notNull(),
+  embedding: vector('embedding').notNull(),
+  tokenCount: integer('token_count'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
 export const quizzes = pgTable('quizzes', {
   id: serial('id').primaryKey(),
   userId: integer('user_id')
@@ -129,12 +167,25 @@ export const documentsRelations = relations(documents, ({ one, many }) => ({
   }),
   extractions: many(extractions),
   quizzes: many(quizzes),
+  chunks: many(documentChunks),
 }));
 
-export const extractionsRelations = relations(extractions, ({ one }) => ({
+export const extractionsRelations = relations(extractions, ({ one, many }) => ({
   document: one(documents, {
     fields: [extractions.documentId],
     references: [documents.id],
+  }),
+  chunks: many(documentChunks),
+}));
+
+export const documentChunksRelations = relations(documentChunks, ({ one }) => ({
+  document: one(documents, {
+    fields: [documentChunks.documentId],
+    references: [documents.id],
+  }),
+  extraction: one(extractions, {
+    fields: [documentChunks.extractionId],
+    references: [extractions.id],
   }),
 }));
 
@@ -183,6 +234,8 @@ export type Document = typeof documents.$inferSelect;
 export type NewDocument = typeof documents.$inferInsert;
 export type Extraction = typeof extractions.$inferSelect;
 export type NewExtraction = typeof extractions.$inferInsert;
+export type DocumentChunk = typeof documentChunks.$inferSelect;
+export type NewDocumentChunk = typeof documentChunks.$inferInsert;
 export type Quiz = typeof quizzes.$inferSelect;
 export type NewQuiz = typeof quizzes.$inferInsert;
 export type Question = typeof questions.$inferSelect;
