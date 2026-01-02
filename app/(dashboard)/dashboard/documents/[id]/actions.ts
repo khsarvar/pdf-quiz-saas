@@ -90,12 +90,12 @@ export async function generateQuiz(
       const extractionMethod = (() => {
         switch (document.mimeType) {
           case 'application/pdf':
-            return 'python-pdf';
+            return 'node-pdf';
           case 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
-            return 'python-pptx';
+            return 'node-pptx';
           case 'application/msword':
           case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
-            return 'python-word';
+            return 'node-word';
           default:
             return 'unknown';
         }

@@ -8,7 +8,7 @@ This is a starter template for building a SaaS application using **Next.js** wit
 
 - Marketing landing page (`/`) with animated Terminal element
 - Pricing page (`/pricing`) which connects to Stripe Checkout
-- Dashboard pages with CRUD operations on users/teams
+- Dashboard pages for account and documents
 - Basic RBAC with Owner and Member roles
 - Subscription management with Stripe Customer Portal
 - Email/password authentication with JWTs stored to cookies
@@ -76,14 +76,14 @@ To get your R2 credentials:
 3. Your Account ID can be found in the R2 dashboard URL or in your Cloudflare account settings
 4. Create an R2 bucket in the dashboard
 
-Run the database migrations and seed the database with a default user and team:
+Run the database migrations and seed the database with a default user:
 
 ```bash
 pnpm db:migrate
 pnpm db:seed
 ```
 
-This will create the following user and team:
+This will create the following user:
 
 - User: `test@test.com`
 - Password: `admin123`
