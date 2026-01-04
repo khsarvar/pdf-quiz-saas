@@ -50,8 +50,8 @@ export async function generateQuiz(
     return { error: 'Unauthorized' };
   }
 
-  // Check if document is ready for processing
-  if (document.status !== 'uploaded' && document.status !== 'ready') {
+  // Check if document is ready for processing (allow failed status for retry)
+  if (document.status !== 'uploaded' && document.status !== 'ready' && document.status !== 'failed') {
     return { error: `Document status is ${document.status}. Cannot generate quiz.` };
   }
 
@@ -84,27 +84,16 @@ export async function generateQuiz(
       extractedText = extraction.rawText;
     } else {
       // Extract text from document
-      extractedText = await extractTextFromDocument(
+      const extractionResult = await extractTextFromDocument(
         documentId,
         document.storageKey,
         document.mimeType
       );
 
-      // Save extraction
-      const extractionMethod = (() => {
-        switch (document.mimeType) {
-          case 'application/pdf':
-            return 'node-pdf';
-          case 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
-            return 'node-pptx';
-          case 'application/msword':
-          case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
-            return 'node-word';
-          default:
-            return 'unknown';
-        }
-      })();
+      extractedText = extractionResult.text;
+      const extractionMethod = extractionResult.method;
 
+      // Save extraction with the actual method used (may include OCR)
       const newExtraction: NewExtraction = {
         documentId,
         rawText: extractedText,
