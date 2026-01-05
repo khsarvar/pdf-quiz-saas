@@ -5,13 +5,10 @@ import {
   documents,
   quizzes,
   questions,
-  extractions,
   type NewQuiz,
   type NewQuestion,
-  type NewExtraction,
 } from '@/lib/db/schema';
-import { getUser, getDocumentById, getExtractionForDocument, getQuizForDocument } from '@/lib/db/queries';
-import { extractTextFromDocument } from '@/lib/extraction';
+import { getUser, getDocumentById, getQuizForDocument, hasChunksForDocument } from '@/lib/db/queries';
 import { generateQuestions } from '@/lib/generation';
 import { eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
@@ -46,9 +43,19 @@ export async function generateQuiz(
     return { error: 'Unauthorized' };
   }
 
-  // Check if document is ready for processing
-  if (document.status !== 'uploaded' && document.status !== 'ready') {
+  // Check if document is ready for quiz generation
+  // Document must be ready (processing complete) or failed (for retry)
+  if (document.status !== 'ready' && document.status !== 'failed') {
+    if (document.status === 'processing') {
+      return { error: 'Document is still being processed. Please wait for processing to complete.' };
+    }
     return { error: `Document status is ${document.status}. Cannot generate quiz.` };
+  }
+
+  // Verify that chunks exist (document has been processed)
+  const chunksExist = await hasChunksForDocument(documentId);
+  if (!chunksExist) {
+    return { error: 'Document has not been processed yet. Please wait for processing to complete.' };
   }
 
   // Check if user can regenerate quizzes (paid plans only)
@@ -66,56 +73,10 @@ export async function generateQuiz(
   }
 
   try {
-    // Update document status to processing
-    await db
-      .update(documents)
-      .set({ status: 'processing' })
-      .where(eq(documents.id, documentId));
-
-    // Extract text (or get existing extraction)
-    let extraction = await getExtractionForDocument(documentId);
-    let extractedText: string;
-
-    if (extraction) {
-      extractedText = extraction.rawText;
-    } else {
-      // Extract text from document
-      extractedText = await extractTextFromDocument(
-        documentId,
-        document.storageKey,
-        document.mimeType
-      );
-
-      // Save extraction
-      const extractionMethod = (() => {
-        switch (document.mimeType) {
-          case 'application/pdf':
-            return 'node-pdf';
-          case 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
-            return 'node-pptx';
-          case 'application/msword':
-          case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
-            return 'node-word';
-          default:
-            return 'unknown';
-        }
-      })();
-
-      const newExtraction: NewExtraction = {
-        documentId,
-        rawText: extractedText,
-        method: extractionMethod,
-      };
-
-      [extraction] = await db
-        .insert(extractions)
-        .values(newExtraction)
-        .returning();
-    }
-
     // Generate questions using LLM with plan-specific count
+    // Document has already been processed (extracted, chunked, and embedded) during upload
     const questionCount = plan.questionsPerQuiz;
-    const generatedQuestions = await generateQuestions(extractedText, questionCount);
+    const generatedQuestions = await generateQuestions(documentId, questionCount);
 
     // Create quiz
     const newQuiz: NewQuiz = {
@@ -131,10 +92,6 @@ export async function generateQuiz(
       .returning();
 
     if (!createdQuiz) {
-      await db
-        .update(documents)
-        .set({ status: 'failed' })
-        .where(eq(documents.id, documentId));
       return { error: 'Failed to create quiz' };
     }
 
@@ -157,12 +114,6 @@ export async function generateQuiz(
       .set({ status: 'ready' })
       .where(eq(quizzes.id, createdQuiz.id));
 
-    // Update document status to ready
-    await db
-      .update(documents)
-      .set({ status: 'ready' })
-      .where(eq(documents.id, documentId));
-
     // Increment usage count
     await incrementQuizGeneration(user);
 
@@ -179,12 +130,6 @@ export async function generateQuiz(
     }
     
     console.error('Error generating quiz:', error);
-
-    // Update document status to failed
-    await db
-      .update(documents)
-      .set({ status: 'failed' })
-      .where(eq(documents.id, documentId));
 
     return { error: 'Failed to generate quiz. Please try again.' };
   }

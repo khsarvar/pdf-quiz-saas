@@ -58,7 +58,7 @@ function getStatusLabel(status: string) {
   }
 }
 
-function GenerateQuizButton({ documentId, quizId }: { documentId: number; quizId?: number | null }) {
+function GenerateQuizButton({ documentId, quizId, status }: { documentId: number; quizId?: number | null; status?: string }) {
   const initialState: GenerateQuizState = {};
   const [state, formAction, isPending] = useActionState<GenerateQuizState, FormData>(
     generateQuiz,
@@ -81,6 +81,9 @@ function GenerateQuizButton({ documentId, quizId }: { documentId: number; quizId
     );
   }
 
+  const isRetry = status === 'failed';
+  const buttonText = isRetry ? 'Retry Quiz Generation' : 'Generate Quiz';
+
   return (
     <div>
       <form action={formAction}>
@@ -99,7 +102,7 @@ function GenerateQuizButton({ documentId, quizId }: { documentId: number; quizId
           ) : (
             <>
               <Sparkles className="mr-2 h-4 w-4" />
-              Generate Quiz
+              {buttonText}
             </>
           )}
         </Button>
@@ -183,8 +186,8 @@ function DocumentsList() {
                 </div>
               </div>
               <div className="flex items-center space-x-2">
-                {(doc.status === 'uploaded' || doc.status === 'ready') && (
-                  <GenerateQuizButton documentId={doc.id} quizId={doc.quizId} />
+                {(doc.status === 'uploaded' || doc.status === 'ready' || doc.status === 'failed') && (
+                  <GenerateQuizButton documentId={doc.id} quizId={doc.quizId} status={doc.status} />
                 )}
                 {doc.status === 'processing' && (
                   <span className="text-xs text-gray-500">Processing...</span>

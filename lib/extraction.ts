@@ -3,6 +3,7 @@ import { spawn } from 'child_process';
 import { platform, tmpdir } from 'os';
 import { join } from 'path';
 import { existsSync } from 'fs';
+import { randomBytes } from 'crypto';
 import JSZip from 'jszip';
 import { XMLParser } from 'fast-xml-parser';
 import { downloadFileFromR2, isR2Configured } from './storage';
@@ -15,16 +16,26 @@ const MIME = {
 } as const;
 
 /**
+ * Result of text extraction, including the method used
+ */
+export interface ExtractionResult {
+  text: string;
+  method: string;
+}
+
+/**
  * Extracts raw text from uploaded documents (PDF, PPTX, DOC, DOCX) stored in R2.
  *
  * Files are downloaded from R2 to a temporary location before processing.
  * Extraction is performed using native Node.js libraries.
+ * 
+ * @returns The extracted text and method used
  */
 export async function extractTextFromDocument(
   documentId: number,
   storageKey: string,
   mimeType: string
-): Promise<string> {
+): Promise<ExtractionResult> {
   console.log('[extraction] start', { documentId, storageKey, mimeType });
 
   // Check if R2 is configured
@@ -60,8 +71,11 @@ export async function extractTextFromDocument(
     console.log('[extraction] downloaded to temp file', { tempFilePath });
 
     // Extract text using native Node.js implementation
-    const text = await extractTextNative(tempFilePath, mimeType, ext);
-    return text.trim();
+    const result = await extractTextNative(tempFilePath, mimeType, ext);
+    return {
+      text: result.text.trim(),
+      method: result.method,
+    };
   } finally {
     // Clean up temporary file
     if (tempFilePath) {
@@ -88,7 +102,7 @@ async function extractTextNative(
   filePath: string,
   mimeType: string,
   ext: string | undefined
-): Promise<string> {
+): Promise<ExtractionResult> {
   const startedAt = Date.now();
   console.log('[extraction] native start', { mimeType, ext });
 
@@ -98,15 +112,18 @@ async function extractTextNative(
     }
 
     if (mimeType === MIME.docx || ext === 'docx') {
-      return await extractDocx(filePath);
+      const text = await extractDocx(filePath);
+      return { text, method: 'node-word' };
     }
 
     if (mimeType === MIME.pptx || ext === 'pptx') {
-      return await extractPptx(filePath);
+      const text = await extractPptx(filePath);
+      return { text, method: 'node-pptx' };
     }
 
     if (mimeType === MIME.doc || ext === 'doc') {
-      return await extractDoc(filePath);
+      const text = await extractDoc(filePath);
+      return { text, method: 'node-word' };
     }
 
     throw new Error(`Unsupported file type: ${mimeType} (ext: ${ext})`);
@@ -116,54 +133,288 @@ async function extractTextNative(
   }
 }
 
-async function extractPdf(filePath: string): Promise<string> {
+/**
+ * Checks if a system command is available
+ */
+async function hasCommand(cmd: string): Promise<boolean> {
+  try {
+    const { exec } = await import('child_process');
+    const { promisify } = await import('util');
+    const execAsync = promisify(exec);
+    await execAsync(`which ${cmd}`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Extracts text from PDF using OCR by converting pages to images
+ * and running Tesseract OCR on each page using system commands
+ */
+async function extractPdfWithOCR(filePath: string): Promise<string> {
+  const startedAt = Date.now();
+  console.log('[extraction] OCR: starting PDF OCR extraction');
+  
+  // Check for required tools
+  const hasPdftoppm = await hasCommand('pdftoppm');
+  const hasTesseract = await hasCommand('tesseract');
+  
+  if (!hasPdftoppm || !hasTesseract) {
+    throw new Error(
+      'OCR tools missing. Please install: poppler-utils (pdftoppm) and tesseract-ocr. ' +
+      'On macOS: brew install poppler tesseract. ' +
+      'On Linux: apt-get install poppler-utils tesseract-ocr (or equivalent).'
+    );
+  }
+  
+  const tempDir = join(tmpdir(), `pdf-ocr-${randomBytes(6).toString('hex')}`);
+  const { mkdir, readdir, rmdir } = await import('fs/promises');
+  
+  let tempImageFiles: string[] = [];
+  
+  try {
+    // Create temporary directory for images
+    await mkdir(tempDir, { recursive: true });
+    const prefix = join(tempDir, 'page');
+    
+    // Render PDF pages to PNG images using pdftoppm
+    // -png: output PNG format
+    // -r 300: resolution 300 DPI (good balance of quality and speed)
+    console.log('[extraction] OCR: converting PDF pages to images');
+    await runSystemTool(
+      ['pdftoppm', '-png', '-r', '300', filePath, prefix],
+      300000, // 5 minute timeout for conversion
+      100 * 1024 * 1024, // 100MB max output
+      'pdftoppm'
+    );
+    
+    // Read all generated PNG files
+    const files = (await readdir(tempDir))
+      .filter((f) => f.endsWith('.png'))
+      .sort((a, b) => {
+        // Sort numerically (page-1.png, page-2.png, etc.)
+        const numA = parseInt(a.replace(/[^0-9]/g, '')) || 0;
+        const numB = parseInt(b.replace(/[^0-9]/g, '')) || 0;
+        return numA - numB;
+      });
+    
+    console.log('[extraction] OCR: found', files.length, 'pages to process');
+    
+    const pageTexts: string[] = [];
+    
+    // Run OCR on each page image
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const imgPath = join(tempDir, file);
+      tempImageFiles.push(imgPath);
+      
+      console.log('[extraction] OCR: processing page', { 
+        pageNum: i + 1, 
+        totalPages: files.length 
+      });
+      
+      try {
+        // Run tesseract OCR on the image
+        // stdout: output to stdout instead of file
+        // -l eng: use English language
+        const ocrText = await runSystemTool(
+          ['tesseract', imgPath, 'stdout', '-l', 'eng'],
+          120000, // 2 minute timeout per page
+          10 * 1024 * 1024, // 10MB max output per page
+          'tesseract'
+        );
+        
+        const trimmedText = ocrText.trim();
+        if (trimmedText.length > 0) {
+          pageTexts.push(trimmedText);
+          console.log('[extraction] OCR: page extracted', { 
+            pageNum: i + 1, 
+            textLength: trimmedText.length 
+          });
+        } else {
+          console.warn('[extraction] OCR: page returned empty text', { pageNum: i + 1 });
+        }
+      } catch (pageError) {
+        console.error('[extraction] OCR: error processing page', { 
+          pageNum: i + 1, 
+          error: pageError 
+        });
+        // Continue with next page - don't fail entire extraction for one page
+      }
+    }
+    
+    const combinedText = pageTexts.join('\n\n');
+    const durationMs = Date.now() - startedAt;
+    console.log('[extraction] OCR: completed', { 
+      durationMs, 
+      pagesProcessed: pageTexts.length,
+      totalPages: files.length,
+      totalTextLength: combinedText.length 
+    });
+    
+    return combinedText;
+  } catch (error) {
+    console.error('[extraction] OCR: failed', { error });
+    throw error;
+  } finally {
+    // Clean up temporary directory and files
+    try {
+      for (const imagePath of tempImageFiles) {
+        try {
+          await unlink(imagePath);
+        } catch (cleanupError) {
+          console.warn('[extraction] OCR: failed to cleanup temp image', {
+            imagePath,
+            error: cleanupError,
+          });
+        }
+      }
+      
+      // Remove temporary directory
+      try {
+        await rmdir(tempDir);
+      } catch (rmdirError) {
+        // Directory might not be empty, try to remove files first
+        try {
+          const remainingFiles = await readdir(tempDir);
+          await Promise.all(remainingFiles.map(f => unlink(join(tempDir, f))));
+          await rmdir(tempDir);
+        } catch {
+          console.warn('[extraction] OCR: failed to cleanup temp directory', {
+            tempDir,
+            error: rmdirError,
+          });
+        }
+      }
+    } catch (cleanupError) {
+      console.warn('[extraction] OCR: cleanup error', { error: cleanupError });
+    }
+  }
+}
+
+/**
+ * Checks if extracted text quality is good enough
+ * Returns false if text appears to be empty, too short, or gibberish
+ */
+function isExtractionQualityGood(text: string): boolean {
+  const trimmed = text.trim();
+  
+  // Empty or very short text
+  if (trimmed.length < 50) {
+    console.log('[extraction] quality check: text too short', { length: trimmed.length });
+    return false;
+  }
+
+  // Check for gibberish - high ratio of non-alphanumeric characters
+  // This catches cases where pdf-parse extracts corrupted data
+  const alphanumericCount = (trimmed.match(/[a-zA-Z0-9]/g) || []).length;
+  const totalChars = trimmed.length;
+  const alphanumericRatio = alphanumericCount / totalChars;
+
+  // If less than 30% of characters are alphanumeric, likely gibberish
+  if (alphanumericRatio < 0.3) {
+    console.log('[extraction] quality check: low alphanumeric ratio', { 
+      ratio: alphanumericRatio.toFixed(2),
+      alphanumericCount,
+      totalChars
+    });
+    return false;
+  }
+
+  // Check for reasonable word count (at least 5 words)
+  const wordCount = trimmed.split(/\s+/).filter(w => w.length > 0).length;
+  if (wordCount < 5) {
+    console.log('[extraction] quality check: too few words', { wordCount });
+    return false;
+  }
+
+  return true;
+}
+
+async function extractPdf(filePath: string): Promise<ExtractionResult> {
   const buffer = await readFile(filePath);
   
-  // pdf-parse ESM module: PDFParse is a class constructor, not a default export
-  const mod = await import('pdf-parse');
+  // Try pdf-parse first (fast, works for text-based PDFs)
+  console.log('[extraction] pdf: attempting pdf-parse');
+  let text = '';
+  let extractionMethod = 'node-pdf';
   
-  let data;
-  // Check if default exists and is a function
-  if ('default' in mod && typeof (mod as any).default === 'function') {
-    data = await (mod as any).default(buffer);
-  } else if (mod.PDFParse) {
-    // PDFParse is a class constructor - create a wrapper function that uses it correctly
-    const pdfParseWrapper = async (buf: Buffer) => {
-      const instance = new mod.PDFParse(buf);
-      // Check if instance is a promise (some constructors return promises)
-      if (instance instanceof Promise) {
-        return await instance;
-      }
-      // Check if instance has text property directly
-      if (instance && typeof instance === 'object' && 'text' in instance) {
+  try {
+    // pdf-parse ESM module: PDFParse is a class constructor, not a default export
+    const mod = await import('pdf-parse');
+    
+    let data;
+    // Check if default exists and is a function
+    if ('default' in mod && typeof (mod as any).default === 'function') {
+      data = await (mod as any).default(buffer);
+    } else if (mod.PDFParse) {
+      // PDFParse is a class constructor - create a wrapper function that uses it correctly
+      const pdfParseWrapper = async (buf: Buffer) => {
+        const instance = new mod.PDFParse(buf);
+        // Check if instance is a promise (some constructors return promises)
+        if (instance instanceof Promise) {
+          return await instance;
+        }
+        // Check if instance has text property directly
+        if (instance && typeof instance === 'object' && 'text' in instance) {
+          return instance;
+        }
+        // Check if instance has a method to get data
+        if (typeof (instance as any).getData === 'function') {
+          return await (instance as any).getData();
+        }
+        if (typeof (instance as any).parse === 'function') {
+          return await (instance as any).parse();
+        }
+        // Fallback: return instance as-is
         return instance;
-      }
-      // Check if instance has a method to get data
-      if (typeof (instance as any).getData === 'function') {
-        return await (instance as any).getData();
-      }
-      if (typeof (instance as any).parse === 'function') {
-        return await (instance as any).parse();
-      }
-      // Fallback: return instance as-is
-      return instance;
-    };
-    data = await pdfParseWrapper(buffer);
-  } else if (typeof (mod as any) === 'function') {
-    data = await (mod as any)(buffer);
-  } else {
-    throw new Error(`pdf-parse module does not export usable function. Keys: ${Object.keys(mod).join(', ')}`);
+      };
+      data = await pdfParseWrapper(buffer);
+    } else if (typeof (mod as any) === 'function') {
+      data = await (mod as any)(buffer);
+    } else {
+      throw new Error(`pdf-parse module does not export usable function. Keys: ${Object.keys(mod).join(', ')}`);
+    }
+
+    // pdf-parse returns all text in the text property
+    text = data.text || '';
+    const trimmedText = text.trim();
+
+    // Check if extraction quality is good
+    if (trimmedText && isExtractionQualityGood(trimmedText)) {
+      console.log('[extraction] pdf: pdf-parse succeeded', { textLength: trimmedText.length });
+      return { text: trimmedText, method: 'node-pdf' };
+    }
+
+    // Quality check failed - fallback to OCR
+    console.log('[extraction] pdf: pdf-parse quality check failed, falling back to OCR', {
+      textLength: trimmedText.length,
+      isEmpty: !trimmedText
+    });
+  } catch (error) {
+    console.warn('[extraction] pdf: pdf-parse failed, falling back to OCR', { error });
   }
 
-  // pdf-parse returns all text in the text property
-  const text = data.text || '';
-  const trimmedText = text.trim();
-
-  if (!trimmedText) {
-    return '';
+  // Fallback to OCR
+  try {
+    console.log('[extraction] pdf: starting OCR extraction');
+    const ocrText = await extractPdfWithOCR(filePath);
+    extractionMethod = 'node-pdf+ocr';
+    
+    // If OCR also fails or returns empty, return the original pdf-parse result if available
+    if (!ocrText || ocrText.trim().length === 0) {
+      console.warn('[extraction] pdf: OCR returned empty text, using pdf-parse result');
+      return { text: text || '', method: 'node-pdf' };
+    }
+    
+    console.log('[extraction] pdf: OCR succeeded', { textLength: ocrText.trim().length });
+    return { text: ocrText.trim(), method: extractionMethod };
+  } catch (ocrError) {
+    console.error('[extraction] pdf: OCR failed', { error: ocrError });
+    // Return whatever we got from pdf-parse, even if it's empty or poor quality
+    return { text: text || '', method: 'node-pdf' };
   }
-
-  return trimmedText;
 }
 
 async function extractDocx(filePath: string): Promise<string> {

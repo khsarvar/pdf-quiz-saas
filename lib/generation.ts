@@ -1,8 +1,10 @@
 /**
- * LLM-based quiz question generation using OpenAI API
+ * LLM-based quiz question generation using OpenAI API with RAG
  */
 
 import OpenAI from 'openai';
+import { findChunksForQuestionGeneration } from './vector-search';
+import { estimateTokenCount } from './chunking';
 
 export interface GeneratedQuestion {
   prompt: string;
@@ -33,19 +35,50 @@ function getOpenAIClient(): OpenAI {
   return cachedOpenAI;
 }
 
+/**
+ * Generate questions using RAG - retrieves relevant chunks from the document
+ * @param documentId Document ID to generate questions for
+ * @param count Number of questions to generate
+ * @returns Array of generated questions
+ */
 export async function generateQuestions(
-  extractedText: string,
+  documentId: number,
   count: number = 8
 ): Promise<GeneratedQuestion[]> {
   const openai = getOpenAIClient();
 
-  // Truncate text if it's too long (OpenAI has token limits)
-  // Rough estimate: 1 token ≈ 4 characters, and we want to leave room for the prompt and response
-  const maxTextLength = 100000; // ~25k tokens for content, leaving room for prompt/response
-  const truncatedText =
-    extractedText.length > maxTextLength
-      ? extractedText.substring(0, maxTextLength) + '\n\n[Content truncated...]'
-      : extractedText;
+  // Retrieve relevant chunks using RAG
+  console.log('[rag] Retrieving chunks for document', documentId);
+  const chunks = await findChunksForQuestionGeneration(documentId, count);
+  console.log('[rag] Retrieved', chunks.length, 'chunks');
+
+  if (chunks.length === 0) {
+    throw new Error('No chunks found for document. Please ensure the document has been processed.');
+  }
+
+  // Combine chunks into text, respecting token limits
+  // Target: ~20-25k tokens for content (leaving room for prompt/response)
+  const maxTokens = 25000;
+  const combinedChunks: string[] = [];
+  let totalTokens = 0;
+
+  for (const chunk of chunks) {
+    const chunkTokens = chunk.tokenCount || estimateTokenCount(chunk.text);
+    
+    if (totalTokens + chunkTokens > maxTokens) {
+      // If adding this chunk would exceed limit, stop
+      // But if we have very few chunks, include it anyway (better to have content)
+      if (combinedChunks.length >= 5) {
+        break;
+      }
+    }
+
+    combinedChunks.push(chunk.text);
+    totalTokens += chunkTokens;
+  }
+
+  const combinedText = combinedChunks.join('\n\n');
+  console.log('[rag] Combined', combinedChunks.length, 'chunks into', totalTokens, 'tokens');
 
   const systemPrompt = `You are an expert educator creating high-quality multiple-choice quiz questions from educational content. 
 Generate questions that:
@@ -65,7 +98,7 @@ Return your response as a JSON object with a "questions" array. Each question mu
 
   const userPrompt = `Generate ${count} multiple-choice questions based on the following content:
 
-${truncatedText}
+${combinedText}
 
 Return the questions as a JSON object with this exact structure:
 {
@@ -84,12 +117,12 @@ Return the questions as a JSON object with this exact structure:
 
   try {
     const response = await openai.responses.create({
-      model: process.env.OPENAI_MODEL || 'gpt-4o-mini', // Use gpt-4o-mini by default for cost efficiency
+      model: process.env.OPENAI_MODEL || 'gpt-5-nano', // Use gpt-5-nano by default for cost efficiency
       instructions: systemPrompt,
       input: userPrompt,
       text: { format: { type: 'json_object' } },
-      temperature: 0.7, // Balance between creativity and consistency
-      max_output_tokens: 4000, // Enough for multiple questions with explanations
+      reasoning: { effort: "low" },
+      max_output_tokens: 8000, // Enough for multiple questions with explanations
     });
 
     if (response.error) {

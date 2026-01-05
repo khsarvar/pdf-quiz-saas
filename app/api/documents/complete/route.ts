@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db/drizzle';
-import { documents, type NewDocument } from '@/lib/db/schema';
+import { documents, extractions, documentChunks, type NewDocument, type NewExtraction, type NewDocumentChunk } from '@/lib/db/schema';
 import { getUser } from '@/lib/db/queries';
 import { checkDocumentUploadLimit, incrementDocumentUpload } from '@/lib/subscriptions/usage';
 import { isR2Configured } from '@/lib/storage';
+import { extractTextFromDocument } from '@/lib/extraction';
+import { chunkDocument, estimateTokenCount } from '@/lib/chunking';
+import { generateEmbeddings } from '@/lib/embeddings';
+import { eq } from 'drizzle-orm';
 
 function guessMimeTypeFromFilename(filename: string): string | null {
   const ext = filename.split('.').pop()?.toLowerCase();
@@ -82,7 +86,7 @@ export async function POST(request: NextRequest) {
       filename,
       storageKey,
       mimeType: inferredMimeType,
-      status: 'uploaded',
+      status: 'processing', // Start as processing while we extract, chunk, and embed
     };
 
     const [createdDocument] = await db
@@ -100,6 +104,19 @@ export async function POST(request: NextRequest) {
     // Increment usage count (for paid plans)
     await incrementDocumentUpload(user);
 
+    // Process document in background: extract, chunk, and generate embeddings
+    // We do this asynchronously so the API can return quickly
+    processDocumentAsync(createdDocument.id, storageKey, inferredMimeType).catch((error) => {
+      console.error('Error processing document:', error);
+      // Update document status to failed if processing fails
+      db.update(documents)
+        .set({ status: 'failed' })
+        .where(eq(documents.id, createdDocument.id))
+        .catch((dbError) => {
+          console.error('Error updating document status:', dbError);
+        });
+    });
+
     return NextResponse.json({
       documentId: createdDocument.id,
       message: 'Document uploaded successfully',
@@ -110,6 +127,122 @@ export async function POST(request: NextRequest) {
       { error: 'Failed to complete upload' },
       { status: 500 }
     );
+  }
+}
+
+/**
+ * Process document asynchronously: extract text, chunk, and generate embeddings
+ */
+async function processDocumentAsync(
+  documentId: number,
+  storageKey: string,
+  mimeType: string
+): Promise<void> {
+  try {
+    console.log('[processing] Starting document processing', { documentId });
+
+    // Extract text from document
+    const extractionResult = await extractTextFromDocument(
+      documentId,
+      storageKey,
+      mimeType
+    );
+
+    const extractedText = extractionResult.text;
+    const extractionMethod = extractionResult.method;
+
+    // Save extraction
+    const newExtraction: NewExtraction = {
+      documentId,
+      rawText: extractedText,
+      method: extractionMethod,
+    };
+
+    const [extraction] = await db
+      .insert(extractions)
+      .values(newExtraction)
+      .returning();
+
+    if (!extraction) {
+      throw new Error('Failed to save extraction');
+    }
+
+    console.log('[processing] Extracted text', { 
+      documentId, 
+      textLength: extractedText.length,
+      method: extractionMethod 
+    });
+
+    // Chunk the document
+    console.log('[processing] Starting chunking', { documentId });
+    const chunks = chunkDocument(extractedText);
+    console.log('[processing] Created chunks', { documentId, chunkCount: chunks.length });
+
+    if (chunks.length === 0) {
+      console.warn('[processing] No chunks created - text may be too short or empty');
+      // For very short documents, create a single chunk even if it's small
+      if (extractedText.trim().length > 0) {
+        const singleChunk = [{
+          text: extractedText.trim(),
+          index: 0,
+          startChar: 0,
+          endChar: extractedText.trim().length,
+        }];
+        console.log('[processing] Creating single chunk for short document');
+        
+        // Generate embedding for the single chunk
+        const embeddings = await generateEmbeddings([singleChunk[0].text]);
+        
+        const newChunks: NewDocumentChunk[] = [{
+          documentId,
+          extractionId: extraction.id,
+          chunkIndex: 0,
+          text: singleChunk[0].text,
+          embedding: embeddings[0] as any,
+          tokenCount: estimateTokenCount(singleChunk[0].text),
+        }];
+        
+        await db.insert(documentChunks).values(newChunks);
+        console.log('[processing] Stored single chunk in database');
+      } else {
+        throw new Error('Extracted text is empty. Cannot create chunks.');
+      }
+    } else if (chunks.length > 0) {
+      // Generate embeddings for all chunks
+      const chunkTexts = chunks.map((chunk) => chunk.text);
+      console.log('[processing] Generating embeddings', { documentId, chunkCount: chunkTexts.length });
+      const embeddings = await generateEmbeddings(chunkTexts);
+      console.log('[processing] Generated embeddings', { documentId, embeddingCount: embeddings.length });
+
+      // Store chunks in database
+      const newChunks: NewDocumentChunk[] = chunks.map((chunk, index) => ({
+        documentId,
+        extractionId: extraction.id,
+        chunkIndex: chunk.index,
+        text: chunk.text,
+        embedding: embeddings[index] as any, // Custom type handles conversion
+        tokenCount: estimateTokenCount(chunk.text),
+      }));
+
+      await db.insert(documentChunks).values(newChunks);
+      console.log('[processing] Stored chunks in database', { documentId, chunkCount: newChunks.length });
+    }
+
+    // Update document status to ready
+    await db
+      .update(documents)
+      .set({ status: 'ready' })
+      .where(eq(documents.id, documentId));
+
+    console.log('[processing] Document processing complete', { documentId });
+  } catch (error) {
+    console.error('[processing] Error processing document:', error);
+    // Update document status to failed
+    await db
+      .update(documents)
+      .set({ status: 'failed' })
+      .where(eq(documents.id, documentId));
+    throw error;
   }
 }
 
