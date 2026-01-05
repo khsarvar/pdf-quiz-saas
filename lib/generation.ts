@@ -117,12 +117,12 @@ Return the questions as a JSON object with this exact structure:
 
   try {
     const response = await openai.responses.create({
-      model: process.env.OPENAI_MODEL || 'gpt-4o-mini', // Use gpt-4o-mini by default for cost efficiency
+      model: process.env.OPENAI_MODEL || 'gpt-5-nano', // Use gpt-5-nano by default for cost efficiency
       instructions: systemPrompt,
       input: userPrompt,
       text: { format: { type: 'json_object' } },
-      temperature: 0.7, // Balance between creativity and consistency
-      max_output_tokens: 4000, // Enough for multiple questions with explanations
+      reasoning: { effort: "low" },
+      max_output_tokens: 8000, // Enough for multiple questions with explanations
     });
 
     if (response.error) {

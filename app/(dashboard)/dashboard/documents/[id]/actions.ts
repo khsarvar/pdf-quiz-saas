@@ -5,18 +5,11 @@ import {
   documents,
   quizzes,
   questions,
-  extractions,
-  documentChunks,
   type NewQuiz,
   type NewQuestion,
-  type NewExtraction,
-  type NewDocumentChunk,
 } from '@/lib/db/schema';
-import { getUser, getDocumentById, getExtractionForDocument, getQuizForDocument, hasChunksForExtraction } from '@/lib/db/queries';
-import { extractTextFromDocument } from '@/lib/extraction';
+import { getUser, getDocumentById, getQuizForDocument, hasChunksForDocument } from '@/lib/db/queries';
 import { generateQuestions } from '@/lib/generation';
-import { chunkDocument, estimateTokenCount } from '@/lib/chunking';
-import { generateEmbeddings } from '@/lib/embeddings';
 import { eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
@@ -50,9 +43,19 @@ export async function generateQuiz(
     return { error: 'Unauthorized' };
   }
 
-  // Check if document is ready for processing (allow failed status for retry)
-  if (document.status !== 'uploaded' && document.status !== 'ready' && document.status !== 'failed') {
+  // Check if document is ready for quiz generation
+  // Document must be ready (processing complete) or failed (for retry)
+  if (document.status !== 'ready' && document.status !== 'failed') {
+    if (document.status === 'processing') {
+      return { error: 'Document is still being processed. Please wait for processing to complete.' };
+    }
     return { error: `Document status is ${document.status}. Cannot generate quiz.` };
+  }
+
+  // Verify that chunks exist (document has been processed)
+  const chunksExist = await hasChunksForDocument(documentId);
+  if (!chunksExist) {
+    return { error: 'Document has not been processed yet. Please wait for processing to complete.' };
   }
 
   // Check if user can regenerate quizzes (paid plans only)
@@ -70,107 +73,8 @@ export async function generateQuiz(
   }
 
   try {
-    // Update document status to processing
-    await db
-      .update(documents)
-      .set({ status: 'processing' })
-      .where(eq(documents.id, documentId));
-
-    // Extract text (or get existing extraction)
-    let extraction = await getExtractionForDocument(documentId);
-    let extractedText: string;
-
-    if (extraction) {
-      extractedText = extraction.rawText;
-    } else {
-      // Extract text from document
-      const extractionResult = await extractTextFromDocument(
-        documentId,
-        document.storageKey,
-        document.mimeType
-      );
-
-      extractedText = extractionResult.text;
-      const extractionMethod = extractionResult.method;
-
-      // Save extraction with the actual method used (may include OCR)
-      const newExtraction: NewExtraction = {
-        documentId,
-        rawText: extractedText,
-        method: extractionMethod,
-      };
-
-      [extraction] = await db
-        .insert(extractions)
-        .values(newExtraction)
-        .returning();
-    }
-
-    // Process chunks: chunk the text, generate embeddings, and store
-    // Check if chunks already exist for this extraction
-    const chunksExist = extraction ? await hasChunksForExtraction(extraction.id) : false;
-    
-    if (!chunksExist && extraction) {
-      console.log('[chunking] Starting chunk processing for extraction', extraction.id);
-      console.log('[chunking] Extracted text length:', extractedText.length);
-      
-      // Chunk the document
-      const chunks = chunkDocument(extractedText);
-      console.log('[chunking] Created', chunks.length, 'chunks');
-
-      if (chunks.length === 0) {
-        console.warn('[chunking] No chunks created - text may be too short or empty');
-        // For very short documents, create a single chunk even if it's small
-        if (extractedText.trim().length > 0) {
-          const singleChunk = [{
-            text: extractedText.trim(),
-            index: 0,
-            startChar: 0,
-            endChar: extractedText.trim().length,
-          }];
-          console.log('[chunking] Creating single chunk for short document');
-          
-          // Generate embedding for the single chunk
-          const embeddings = await generateEmbeddings([singleChunk[0].text]);
-          
-          const newChunks: NewDocumentChunk[] = [{
-            documentId,
-            extractionId: extraction.id,
-            chunkIndex: 0,
-            text: singleChunk[0].text,
-            embedding: embeddings[0] as any,
-            tokenCount: estimateTokenCount(singleChunk[0].text),
-          }];
-          
-          await db.insert(documentChunks).values(newChunks);
-          console.log('[chunking] Stored single chunk in database');
-        } else {
-          throw new Error('Extracted text is empty. Cannot create chunks.');
-        }
-      } else if (chunks.length > 0) {
-        // Generate embeddings for all chunks
-        const chunkTexts = chunks.map((chunk) => chunk.text);
-        console.log('[embeddings] Generating embeddings for', chunkTexts.length, 'chunks');
-        const embeddings = await generateEmbeddings(chunkTexts);
-        console.log('[embeddings] Generated', embeddings.length, 'embeddings');
-
-        // Store chunks in database
-        const newChunks: NewDocumentChunk[] = chunks.map((chunk, index) => ({
-          documentId,
-          extractionId: extraction.id,
-          chunkIndex: chunk.index,
-          text: chunk.text,
-          embedding: embeddings[index] as any, // Custom type handles conversion
-          tokenCount: estimateTokenCount(chunk.text),
-        }));
-
-        await db.insert(documentChunks).values(newChunks);
-        console.log('[chunking] Stored', newChunks.length, 'chunks in database');
-      }
-    }
-
     // Generate questions using LLM with plan-specific count
-    // Now using RAG - generateQuestions will retrieve chunks instead of using raw text
+    // Document has already been processed (extracted, chunked, and embedded) during upload
     const questionCount = plan.questionsPerQuiz;
     const generatedQuestions = await generateQuestions(documentId, questionCount);
 
@@ -188,10 +92,6 @@ export async function generateQuiz(
       .returning();
 
     if (!createdQuiz) {
-      await db
-        .update(documents)
-        .set({ status: 'failed' })
-        .where(eq(documents.id, documentId));
       return { error: 'Failed to create quiz' };
     }
 
@@ -214,12 +114,6 @@ export async function generateQuiz(
       .set({ status: 'ready' })
       .where(eq(quizzes.id, createdQuiz.id));
 
-    // Update document status to ready
-    await db
-      .update(documents)
-      .set({ status: 'ready' })
-      .where(eq(documents.id, documentId));
-
     // Increment usage count
     await incrementQuizGeneration(user);
 
@@ -236,12 +130,6 @@ export async function generateQuiz(
     }
     
     console.error('Error generating quiz:', error);
-
-    // Update document status to failed
-    await db
-      .update(documents)
-      .set({ status: 'failed' })
-      .where(eq(documents.id, documentId));
 
     return { error: 'Failed to generate quiz. Please try again.' };
   }

@@ -262,3 +262,13 @@ export async function hasChunksForExtraction(extractionId: number): Promise<bool
 
   return result.length > 0;
 }
+
+export async function hasChunksForDocument(documentId: number): Promise<boolean> {
+  const result = await db
+    .select()
+    .from(documentChunks)
+    .where(eq(documentChunks.documentId, documentId))
+    .limit(1);
+
+  return result.length > 0;
+}
