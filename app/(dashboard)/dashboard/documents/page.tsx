@@ -6,9 +6,10 @@ import { Plus, FileText, Clock, CheckCircle, XCircle, Sparkles, Loader2, Eye, Al
 import Link from 'next/link';
 import useSWR from 'swr';
 import { Document } from '@/lib/db/schema';
+import { useRouter } from 'next/navigation';
 
 type DocumentWithQuiz = Document & { quizId?: number | null };
-import { Suspense, useActionState } from 'react';
+import { Suspense, useActionState, useEffect, useState } from 'react';
 import { generateQuiz, type GenerateQuizState } from './[id]/actions';
 
 type UsageStats = {
@@ -58,15 +59,48 @@ function getStatusLabel(status: string) {
   }
 }
 
-function GenerateQuizButton({ documentId, quizId, status }: { documentId: number; quizId?: number | null; status?: string }) {
+function GenerateQuizButton({ documentId, quizId, status, onQuizCreated }: { documentId: number; quizId?: number | null; status?: string; onQuizCreated?: () => void }) {
+  const router = useRouter();
   const initialState: GenerateQuizState = {};
   const [state, formAction, isPending] = useActionState<GenerateQuizState, FormData>(
     generateQuiz,
     initialState
   );
+  const [pollingQuizId, setPollingQuizId] = useState<number | null>(null);
 
-  // If quiz already exists, show "View Quiz" button
-  if (quizId) {
+  // Start polling when we get a quizId from the server action
+  useEffect(() => {
+    if (state?.quizId && !pollingQuizId) {
+      setPollingQuizId(state.quizId);
+      // Trigger refresh of documents list
+      onQuizCreated?.();
+    }
+  }, [state?.quizId, pollingQuizId, onQuizCreated]);
+
+  // Poll for quiz status when we have a quizId
+  const { data: quizData } = useSWR<{ status: string } | null>(
+    pollingQuizId ? `/api/quizzes/${pollingQuizId}` : null,
+    fetcher,
+    {
+      refreshInterval: (data) => {
+        // Poll every 2 seconds if status is 'generating', stop if 'ready' or 'failed'
+        if (!data || data.status === 'generating') {
+          return 2000;
+        }
+        return 0; // Stop polling
+      },
+    }
+  );
+
+  // Redirect when quiz is ready
+  useEffect(() => {
+    if (quizData?.status === 'ready' && pollingQuizId) {
+      router.push(`/dashboard/quizzes/${pollingQuizId}`);
+    }
+  }, [quizData?.status, pollingQuizId, router]);
+
+  // If quiz already exists and is ready, show "View Quiz" button
+  if (quizId && !pollingQuizId) {
     return (
       <Button
         asChild
@@ -81,7 +115,10 @@ function GenerateQuizButton({ documentId, quizId, status }: { documentId: number
     );
   }
 
-  const isRetry = status === 'failed';
+  // Show generating state if we're polling
+  const isGenerating = pollingQuizId !== null && quizData?.status === 'generating';
+  const hasFailed = quizData?.status === 'failed';
+  const isRetry = status === 'failed' || hasFailed;
   const buttonText = isRetry ? 'Retry Quiz Generation' : 'Generate Quiz';
 
   return (
@@ -91,10 +128,10 @@ function GenerateQuizButton({ documentId, quizId, status }: { documentId: number
         <Button
           type="submit"
           size="sm"
-          disabled={isPending}
+          disabled={isPending || isGenerating}
           className="bg-orange-500 hover:bg-orange-600 text-white"
         >
-          {isPending ? (
+          {(isPending || isGenerating) ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               Generating...
@@ -109,6 +146,9 @@ function GenerateQuizButton({ documentId, quizId, status }: { documentId: number
       </form>
       {state?.error && (
         <p className="text-xs text-red-500 mt-1">{state.error}</p>
+      )}
+      {hasFailed && (
+        <p className="text-xs text-red-500 mt-1">Quiz generation failed. Please try again.</p>
       )}
     </div>
   );
@@ -187,7 +227,7 @@ function DocumentsList() {
               </div>
               <div className="flex items-center space-x-2">
                 {(doc.status === 'uploaded' || doc.status === 'ready' || doc.status === 'failed') && (
-                  <GenerateQuizButton documentId={doc.id} quizId={doc.quizId} status={doc.status} />
+                  <GenerateQuizButton documentId={doc.id} quizId={doc.quizId} status={doc.status} onQuizCreated={() => mutate()} />
                 )}
                 {doc.status === 'processing' && (
                   <span className="text-xs text-gray-500">Processing...</span>
