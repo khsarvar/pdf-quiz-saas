@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import { Loader2, Upload, FileText } from 'lucide-react';
+import { Loader2, Sparkles, FileText } from 'lucide-react';
 import Link from 'next/link';
 
 type UploadState = {
@@ -257,8 +257,8 @@ export default function UploadPage() {
                     </>
                   ) : (
                     <>
-                      <Upload className="mr-2 h-4 w-4" />
-                      Upload
+                      <Sparkles className="mr-2 h-4 w-4" />
+                      Generate
                     </>
                   )}
                 </Button>
