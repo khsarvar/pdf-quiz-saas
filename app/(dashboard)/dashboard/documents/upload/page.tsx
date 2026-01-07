@@ -146,10 +146,10 @@ export default function UploadPage() {
             ← Back to Documents
           </Link>
           <h1 className="text-lg lg:text-2xl font-medium text-gray-900 mt-2">
-            Upload Slides
+            Generate Quiz
           </h1>
           <p className="text-sm text-gray-600 mt-1">
-            Upload PDF, PPTX, DOC, or DOCX files to generate quizzes from your lecture materials.
+            Upload PDF, PPTX, DOC, or DOCX files to automatically generate quizzes from your lecture materials.
           </p>
         </div>
 
@@ -253,7 +253,7 @@ export default function UploadPage() {
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       {uploadState.status === 'requesting-url' && 'Preparing...'}
                       {uploadState.status === 'uploading' && 'Uploading...'}
-                      {uploadState.status === 'completing' && 'Finalizing...'}
+                      {uploadState.status === 'completing' && 'Processing...'}
                     </>
                   ) : (
                     <>

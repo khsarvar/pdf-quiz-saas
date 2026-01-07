@@ -24,9 +24,8 @@ export async function getCurrentUsagePeriod(user: User) {
   // Free plan: no period, track lifetime usage
   if (plan === 'free') {
     // For free plan, we don't track in usage_tracking table
-    // We'll count directly from documents/quizzes tables when needed
+    // We'll count directly from quizzes table when needed
     return {
-      documentUploads: 0,
       quizGenerations: 0,
       periodStart: user.createdAt,
       periodEnd: null,
@@ -56,7 +55,6 @@ export async function getCurrentUsagePeriod(user: User) {
         userId: user.id,
         periodStart: now,
         periodEnd: periodEnd,
-        documentUploads: 0,
         quizGenerations: 0,
       })
       .returning();
@@ -92,7 +90,6 @@ export async function getCurrentUsagePeriod(user: User) {
         userId: user.id,
         periodStart: user.subscriptionPeriodStart,
         periodEnd: user.subscriptionPeriodEnd,
-        documentUploads: 0,
         quizGenerations: 0,
       })
       .returning();
@@ -119,51 +116,11 @@ export async function getCurrentUsagePeriod(user: User) {
       userId: user.id,
       periodStart: periodStart,
       periodEnd: periodEnd,
-      documentUploads: 0,
       quizGenerations: 0,
     })
     .returning();
 
   return newUsage;
-}
-
-/**
- * Check if user can upload a document
- */
-export async function checkDocumentUploadLimit(user: User): Promise<{ allowed: boolean; error?: string }> {
-  const plan = getPlanConfig(user);
-  
-  if (plan.documentUploads === -1) {
-    return { allowed: true };
-  }
-
-  // Free plan: count total documents
-  if (getUserPlan(user) === 'free') {
-    const totalDocs = await db
-      .select()
-      .from(documents)
-      .where(eq(documents.userId, user.id));
-
-    const count = totalDocs.length;
-    if (count >= plan.documentUploads) {
-      return {
-        allowed: false,
-        error: `You've reached your limit of ${plan.documentUploads} document uploads. Upgrade to continue.`,
-      };
-    }
-    return { allowed: true };
-  }
-
-  // Paid plans: check period usage
-  const usage = await getCurrentUsagePeriod(user);
-  if (usage.documentUploads >= plan.documentUploads) {
-    return {
-      allowed: false,
-      error: `You've reached your limit of ${plan.documentUploads} document uploads for this period. Your limit will reset on ${usage.periodEnd ? new Date(usage.periodEnd).toLocaleDateString() : 'your next billing date'}.`,
-    };
-  }
-
-  return { allowed: true };
 }
 
 /**
@@ -176,14 +133,19 @@ export async function checkQuizGenerationLimit(user: User): Promise<{ allowed: b
     return { allowed: true };
   }
 
-  // Free plan: count total quizzes
+  // Free plan: count only successful quizzes (status='ready')
   if (getUserPlan(user) === 'free') {
-    const totalQuizzes = await db
+    const successfulQuizzes = await db
       .select()
       .from(quizzes)
-      .where(eq(quizzes.userId, user.id));
+      .where(
+        and(
+          eq(quizzes.userId, user.id),
+          eq(quizzes.status, 'ready')
+        )
+      );
 
-    const count = totalQuizzes.length;
+    const count = successfulQuizzes.length;
     if (count >= plan.quizGenerations) {
       return {
         allowed: false,
@@ -193,7 +155,7 @@ export async function checkQuizGenerationLimit(user: User): Promise<{ allowed: b
     return { allowed: true };
   }
 
-  // Paid plans: check period usage
+  // Paid plans: check period usage (only counts successful quizzes)
   const usage = await getCurrentUsagePeriod(user);
   if (usage.quizGenerations >= plan.quizGenerations) {
     return {
@@ -203,30 +165,6 @@ export async function checkQuizGenerationLimit(user: User): Promise<{ allowed: b
   }
 
   return { allowed: true };
-}
-
-/**
- * Increment document upload count
- */
-export async function incrementDocumentUpload(user: User) {
-  const plan = getUserPlan(user);
-  
-  if (plan === 'free') {
-    // Free plan: no tracking needed, just count from documents table
-    return;
-  }
-
-  const usage = await getCurrentUsagePeriod(user);
-  if (!('id' in usage)) {
-    return;
-  }
-  await db
-    .update(usageTracking)
-    .set({
-      documentUploads: usage.documentUploads + 1,
-      updatedAt: new Date(),
-    })
-    .where(eq(usageTracking.id, usage.id));
 }
 
 /**
@@ -281,7 +219,6 @@ export async function resetUsagePeriod(user: User) {
       userId: user.id,
       periodStart: now,
       periodEnd: periodEnd,
-      documentUploads: 0,
       quizGenerations: 0,
     });
 }
@@ -294,27 +231,23 @@ export async function getUserUsageStats(user: User) {
   const planName = getUserPlan(user);
 
   if (planName === 'free') {
-    const totalDocs = await db
-      .select()
-      .from(documents)
-      .where(eq(documents.userId, user.id));
-    
-    const totalQuizzes = await db
+    // Count only successful quizzes (status='ready')
+    const successfulQuizzes = await db
       .select()
       .from(quizzes)
-      .where(eq(quizzes.userId, user.id));
+      .where(
+        and(
+          eq(quizzes.userId, user.id),
+          eq(quizzes.status, 'ready')
+        )
+      );
 
     return {
       plan: planName,
-      documentUploads: {
-        used: totalDocs.length,
-        limit: plan.documentUploads,
-        remaining: Math.max(0, plan.documentUploads - totalDocs.length),
-      },
       quizGenerations: {
-        used: totalQuizzes.length,
+        used: successfulQuizzes.length,
         limit: plan.quizGenerations,
-        remaining: Math.max(0, plan.quizGenerations - totalQuizzes.length),
+        remaining: Math.max(0, plan.quizGenerations - successfulQuizzes.length),
       },
       periodEnd: null,
     };
@@ -323,11 +256,6 @@ export async function getUserUsageStats(user: User) {
   const usage = await getCurrentUsagePeriod(user);
   return {
     plan: planName,
-    documentUploads: {
-      used: usage.documentUploads || 0,
-      limit: plan.documentUploads,
-      remaining: Math.max(0, plan.documentUploads - (usage.documentUploads || 0)),
-    },
     quizGenerations: {
       used: usage.quizGenerations || 0,
       limit: plan.quizGenerations,

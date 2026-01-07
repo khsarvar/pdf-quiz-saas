@@ -115,6 +115,7 @@ export async function getDocumentsForUser() {
       pageCount: documents.pageCount,
       createdAt: documents.createdAt,
       quizId: quizzes.id,
+      quizStatus: quizzes.status,
       quizCreatedAt: quizzes.createdAt,
     })
     .from(documents)
@@ -136,6 +137,7 @@ export async function getDocumentsForUser() {
         pageCount: row.pageCount,
         createdAt: row.createdAt,
         quizId: row.quizId,
+        quizStatus: row.quizStatus,
       });
     }
   }

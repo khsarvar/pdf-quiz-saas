@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db/drizzle';
 import { documents, extractions, documentChunks, type NewDocument, type NewExtraction, type NewDocumentChunk } from '@/lib/db/schema';
 import { getUser } from '@/lib/db/queries';
-import { checkDocumentUploadLimit, incrementDocumentUpload } from '@/lib/subscriptions/usage';
+import { checkQuizGenerationLimit } from '@/lib/subscriptions/usage';
 import { isR2Configured } from '@/lib/storage';
 import { extractTextFromDocument } from '@/lib/extraction';
 import { chunkDocument, estimateTokenCount } from '@/lib/chunking';
 import { generateEmbeddings } from '@/lib/embeddings';
 import { eq } from 'drizzle-orm';
+import { startQuizGenerationForUser } from '@/app/api/quizzes/generate/route';
 
 function guessMimeTypeFromFilename(filename: string): string | null {
   const ext = filename.split('.').pop()?.toLowerCase();
@@ -71,11 +72,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check document upload limit
-    const limitCheck = await checkDocumentUploadLimit(user);
+    // Check quiz generation limit (since upload now automatically generates quiz)
+    const limitCheck = await checkQuizGenerationLimit(user);
     if (!limitCheck.allowed) {
       return NextResponse.json(
-        { error: limitCheck.error || 'Document upload limit reached' },
+        { error: limitCheck.error || 'Quiz generation limit reached' },
         { status: 403 }
       );
     }
@@ -101,12 +102,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Increment usage count (for paid plans)
-    await incrementDocumentUpload(user);
-
     // Process document in background: extract, chunk, and generate embeddings
     // We do this asynchronously so the API can return quickly
-    processDocumentAsync(createdDocument.id, storageKey, inferredMimeType).catch((error) => {
+    processDocumentAsync(createdDocument.id, storageKey, inferredMimeType, user).catch((error) => {
       console.error('Error processing document:', error);
       // Update document status to failed if processing fails
       db.update(documents)
@@ -136,7 +134,8 @@ export async function POST(request: NextRequest) {
 async function processDocumentAsync(
   documentId: number,
   storageKey: string,
-  mimeType: string
+  mimeType: string,
+  user: { id: number }
 ): Promise<void> {
   try {
     console.log('[processing] Starting document processing', { documentId });
@@ -235,6 +234,21 @@ async function processDocumentAsync(
       .where(eq(documents.id, documentId));
 
     console.log('[processing] Document processing complete', { documentId });
+
+    // Auto-trigger quiz generation after document is ready
+    try {
+      const quizResult = await startQuizGenerationForUser(documentId, user);
+      if ('error' in quizResult) {
+        console.error('[processing] Failed to start quiz generation:', quizResult.error);
+        // Don't throw - document is ready even if quiz generation fails
+        // User can retry manually later
+      } else {
+        console.log('[processing] Quiz generation started', { quizId: quizResult.quizId });
+      }
+    } catch (error) {
+      console.error('[processing] Error triggering quiz generation:', error);
+      // Don't throw - document is ready even if quiz generation fails
+    }
   } catch (error) {
     console.error('[processing] Error processing document:', error);
     // Update document status to failed

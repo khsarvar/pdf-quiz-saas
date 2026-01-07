@@ -4,6 +4,7 @@ import {
   documents,
   quizzes,
   questions,
+  users,
   type NewQuiz,
   type NewQuestion,
 } from '@/lib/db/schema';
@@ -47,6 +48,26 @@ export async function generateQuizAsync(
       .set({ status: 'ready' })
       .where(eq(quizzes.id, quizId));
 
+    // Increment usage count only on successful completion (for paid plans)
+    // Fetch user from quiz record
+    const [quiz] = await db
+      .select({ userId: quizzes.userId })
+      .from(quizzes)
+      .where(eq(quizzes.id, quizId))
+      .limit(1);
+
+    if (quiz) {
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, quiz.userId))
+        .limit(1);
+
+      if (user) {
+        await incrementQuizGeneration(user);
+      }
+    }
+
     console.log('[quiz-generation] Quiz generation complete', { quizId });
   } catch (error) {
     console.error('[quiz-generation] Error generating quiz:', error);
@@ -60,6 +81,139 @@ export async function generateQuizAsync(
 }
 
 /**
+ * Start quiz generation with a user object (for background processing)
+ * This version doesn't require request context
+ */
+export async function startQuizGenerationForUser(
+  documentId: number,
+  user: { id: number }
+): Promise<{ quizId: number } | { error: string }> {
+  // Fetch full user object from database
+  const [fullUser] = await db
+    .select()
+    .from(users)
+    .where(eq(users.id, user.id))
+    .limit(1);
+
+  if (!fullUser) {
+    return { error: 'User not found' };
+  }
+
+  // Verify document belongs to user
+  const document = await getDocumentById(documentId);
+  if (!document) {
+    return { error: 'Document not found' };
+  }
+
+  if (document.userId !== fullUser.id) {
+    return { error: 'Unauthorized' };
+  }
+
+  // Check if document is ready for quiz generation
+  if (document.status !== 'ready' && document.status !== 'failed') {
+    if (document.status === 'processing') {
+      return { error: 'Document is still being processed. Please wait for processing to complete.' };
+    }
+    return { error: `Document status is ${document.status}. Cannot generate quiz.` };
+  }
+
+  // Verify that chunks exist (document has been processed)
+  const chunksExist = await hasChunksForDocument(documentId);
+  if (!chunksExist) {
+    return { error: 'Document has not been processed yet. Please wait for processing to complete.' };
+  }
+
+  // Check if user can regenerate quizzes (paid plans only)
+  const plan = getPlanConfig(fullUser);
+  
+  // Check for existing quiz with status 'generating' (race condition protection)
+  const generatingQuiz = await db
+    .select()
+    .from(quizzes)
+    .where(
+      and(
+        eq(quizzes.documentId, documentId),
+        eq(quizzes.userId, fullUser.id),
+        eq(quizzes.status, 'generating')
+      )
+    )
+    .limit(1);
+
+  if (generatingQuiz.length > 0) {
+    // Quiz is already generating, return existing quiz ID
+    return { quizId: generatingQuiz[0].id };
+  }
+
+  // Check for existing failed quiz (allow retry)
+  const failedQuiz = await db
+    .select()
+    .from(quizzes)
+    .where(
+      and(
+        eq(quizzes.documentId, documentId),
+        eq(quizzes.userId, fullUser.id),
+        eq(quizzes.status, 'failed')
+      )
+    )
+    .limit(1);
+
+  // If failed quiz exists, allow retry without checking for 'ready' quiz restriction
+  if (failedQuiz.length === 0) {
+    // Check for existing completed quiz (only if no failed quiz exists)
+    const existingQuiz = await db
+      .select()
+      .from(quizzes)
+      .where(
+        and(
+          eq(quizzes.documentId, documentId),
+          eq(quizzes.userId, fullUser.id),
+          eq(quizzes.status, 'ready')
+        )
+      )
+      .limit(1);
+
+    if (existingQuiz.length > 0 && !plan.canRegenerateQuizzes) {
+      return { error: 'You can only generate one quiz per document on the free plan. Upgrade to regenerate quizzes.' };
+    }
+  }
+
+  // Check quiz generation limit
+  const limitCheck = await checkQuizGenerationLimit(fullUser);
+  if (!limitCheck.allowed) {
+    return { error: limitCheck.error || 'Quiz generation limit reached' };
+  }
+
+  // Create quiz record with status 'generating'
+  const newQuiz: NewQuiz = {
+    userId: fullUser.id,
+    documentId,
+    title: `Quiz: ${document.filename}`,
+    status: 'generating',
+  };
+
+  const [createdQuiz] = await db
+    .insert(quizzes)
+    .values(newQuiz)
+    .returning();
+
+  if (!createdQuiz) {
+    return { error: 'Failed to create quiz record' };
+  }
+
+  // Note: incrementQuizGeneration is now called in generateQuizAsync after successful completion
+
+  // Process quiz generation in background: generate questions
+  // We do this asynchronously so the function can return quickly
+  const questionCount = plan.questionsPerQuiz;
+  generateQuizAsync(createdQuiz.id, documentId, questionCount).catch((error) => {
+    console.error('Error generating quiz:', error);
+    // Error handling is done in generateQuizAsync
+  });
+
+  return { quizId: createdQuiz.id };
+}
+
+/**
  * Start quiz generation - validates and creates quiz, returns quiz ID
  * This function can be called from both API routes and server actions
  */
@@ -69,6 +223,8 @@ export async function startQuizGeneration(documentId: number): Promise<{ quizId:
   if (!user) {
     return { error: 'Unauthorized' };
   }
+
+  return startQuizGenerationForUser(documentId, user);
 
   // Verify document belongs to user
   const document = await getDocumentById(documentId);
@@ -104,7 +260,7 @@ export async function startQuizGeneration(documentId: number): Promise<{ quizId:
     .where(
       and(
         eq(quizzes.documentId, documentId),
-        eq(quizzes.userId, user.id),
+        eq(quizzes.userId, fullUser.id),
         eq(quizzes.status, 'generating')
       )
     )
@@ -115,21 +271,37 @@ export async function startQuizGeneration(documentId: number): Promise<{ quizId:
     return { quizId: generatingQuiz[0].id };
   }
 
-  // Check for existing completed quiz
-  const existingQuiz = await db
+  // Check for existing failed quiz (allow retry)
+  const failedQuiz = await db
     .select()
     .from(quizzes)
     .where(
       and(
         eq(quizzes.documentId, documentId),
-        eq(quizzes.userId, user.id),
-        eq(quizzes.status, 'ready')
+        eq(quizzes.userId, fullUser.id),
+        eq(quizzes.status, 'failed')
       )
     )
     .limit(1);
 
-  if (existingQuiz.length > 0 && !plan.canRegenerateQuizzes) {
-    return { error: 'You can only generate one quiz per document on the free plan. Upgrade to regenerate quizzes.' };
+  // If failed quiz exists, allow retry without checking for 'ready' quiz restriction
+  if (failedQuiz.length === 0) {
+    // Check for existing completed quiz (only if no failed quiz exists)
+    const existingQuiz = await db
+      .select()
+      .from(quizzes)
+      .where(
+        and(
+          eq(quizzes.documentId, documentId),
+          eq(quizzes.userId, fullUser.id),
+          eq(quizzes.status, 'ready')
+        )
+      )
+      .limit(1);
+
+    if (existingQuiz.length > 0 && !plan.canRegenerateQuizzes) {
+      return { error: 'You can only generate one quiz per document on the free plan. Upgrade to regenerate quizzes.' };
+    }
   }
 
   // Check quiz generation limit
@@ -155,8 +327,7 @@ export async function startQuizGeneration(documentId: number): Promise<{ quizId:
     return { error: 'Failed to create quiz record' };
   }
 
-  // Increment usage count (for paid plans)
-  await incrementQuizGeneration(user);
+  // Note: incrementQuizGeneration is now called in generateQuizAsync after successful completion
 
   // Process quiz generation in background: generate questions
   // We do this asynchronously so the function can return quickly

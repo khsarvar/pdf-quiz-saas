@@ -22,7 +22,7 @@ function WelcomeBanner() {
           Welcome back, {name}!
         </h1>
         <p className="text-gray-600">
-          Ready to create your next quiz? Upload slides or start a new quiz to get started.
+          Ready to create your next quiz? Upload a document to automatically generate a quiz.
         </p>
       </CardContent>
     </Card>
@@ -71,7 +71,7 @@ function QuickActions() {
           >
             <Link href="/dashboard/documents/upload" className="flex flex-col items-center justify-center">
               <Upload className="h-6 w-6 mb-2" />
-              <span className="font-medium">Upload Slides</span>
+              <span className="font-medium">Generate Quiz</span>
             </Link>
           </Button>
           <Button

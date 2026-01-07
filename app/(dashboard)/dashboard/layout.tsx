@@ -81,7 +81,7 @@ export default function DashboardLayout({
                   <DropdownMenuItem asChild>
                     <Link href="/dashboard/documents/upload" className="flex items-center">
                       <Upload className="h-4 w-4 mr-2" />
-                      Upload Document
+                      Generate Quiz
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>

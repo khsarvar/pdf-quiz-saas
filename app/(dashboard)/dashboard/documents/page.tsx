@@ -8,17 +8,12 @@ import useSWR from 'swr';
 import { Document } from '@/lib/db/schema';
 import { useRouter } from 'next/navigation';
 
-type DocumentWithQuiz = Document & { quizId?: number | null };
+type DocumentWithQuiz = Document & { quizId?: number | null; quizStatus?: string | null };
 import { Suspense, useActionState, useEffect, useState } from 'react';
 import { generateQuiz, type GenerateQuizState } from './[id]/actions';
 
 type UsageStats = {
   plan: string;
-  documentUploads: {
-    used: number;
-    limit: number;
-    remaining: number;
-  };
   quizGenerations: {
     used: number;
     limit: number;
@@ -59,7 +54,7 @@ function getStatusLabel(status: string) {
   }
 }
 
-function GenerateQuizButton({ documentId, quizId, status, onQuizCreated }: { documentId: number; quizId?: number | null; status?: string; onQuizCreated?: () => void }) {
+function GenerateQuizButton({ documentId, quizId, quizStatus, status, onQuizCreated }: { documentId: number; quizId?: number | null; quizStatus?: string | null; status?: string; onQuizCreated?: () => void }) {
   const router = useRouter();
   const initialState: GenerateQuizState = {};
   const [state, formAction, isPending] = useActionState<GenerateQuizState, FormData>(
@@ -100,7 +95,7 @@ function GenerateQuizButton({ documentId, quizId, status, onQuizCreated }: { doc
   }, [quizData?.status, pollingQuizId, router]);
 
   // If quiz already exists and is ready, show "View Quiz" button
-  if (quizId && !pollingQuizId) {
+  if (quizId && !pollingQuizId && quizStatus === 'ready') {
     return (
       <Button
         asChild
@@ -115,10 +110,16 @@ function GenerateQuizButton({ documentId, quizId, status, onQuizCreated }: { doc
     );
   }
 
+  // If document is ready and quiz is generating or doesn't exist yet, don't show button
+  // (quiz generation happens automatically - status text is shown instead)
+  if (status === 'ready' && quizStatus !== 'failed' && quizStatus !== 'ready' && !pollingQuizId) {
+    return null;
+  }
+
   // Show generating state if we're polling
   const isGenerating = pollingQuizId !== null && quizData?.status === 'generating';
-  const hasFailed = quizData?.status === 'failed';
-  const isRetry = status === 'failed' || hasFailed;
+  const hasFailed = quizData?.status === 'failed' || quizStatus === 'failed';
+  const isRetry = hasFailed;
   const buttonText = isRetry ? 'Retry Quiz Generation' : 'Generate Quiz';
 
   return (
@@ -190,7 +191,7 @@ function DocumentsList() {
             <Button asChild className="bg-orange-500 hover:bg-orange-600">
               <Link href="/dashboard/documents/upload">
                 <Plus className="mr-2 h-4 w-4" />
-                Upload Slides
+                Generate Quiz
               </Link>
             </Button>
           </div>
@@ -226,11 +227,25 @@ function DocumentsList() {
                 </div>
               </div>
               <div className="flex items-center space-x-2">
-                {(doc.status === 'uploaded' || doc.status === 'ready' || doc.status === 'failed') && (
-                  <GenerateQuizButton documentId={doc.id} quizId={doc.quizId} status={doc.status} onQuizCreated={() => mutate()} />
-                )}
                 {doc.status === 'processing' && (
                   <span className="text-xs text-gray-500">Processing...</span>
+                )}
+                {doc.status === 'ready' && doc.quizStatus === 'generating' && (
+                  <span className="text-xs text-gray-500">Generating quiz...</span>
+                )}
+                {doc.status === 'ready' && !doc.quizStatus && (
+                  <span className="text-xs text-gray-500">Generating quiz...</span>
+                )}
+                {/* Show button for ready quizzes (View Quiz), failed quizzes (Retry), or uploaded/failed documents */}
+                {((doc.status === 'uploaded' || doc.status === 'failed') || 
+                  (doc.status === 'ready' && (doc.quizStatus === 'failed' || doc.quizStatus === 'ready'))) && (
+                  <GenerateQuizButton 
+                    documentId={doc.id} 
+                    quizId={doc.quizId} 
+                    quizStatus={doc.quizStatus}
+                    status={doc.status} 
+                    onQuizCreated={() => mutate()} 
+                  />
                 )}
               </div>
             </div>
@@ -256,9 +271,8 @@ function UsageStats() {
 
   if (!usageStats) return null;
 
-  const { documentUploads, quizGenerations, plan, periodEnd } = usageStats;
+  const { quizGenerations, plan, periodEnd } = usageStats;
   const isFree = plan === 'free';
-  const uploadLimitReached = documentUploads.remaining === 0;
   const quizLimitReached = quizGenerations.remaining === 0;
 
   return (
@@ -277,7 +291,7 @@ function UsageStats() {
               )}
             </p>
           </div>
-          {(uploadLimitReached || quizLimitReached) && (
+          {quizLimitReached && (
             <Button asChild size="sm" className="bg-orange-500 hover:bg-orange-600 text-white">
               <Link href="/pricing">
                 Upgrade
@@ -285,55 +299,29 @@ function UsageStats() {
             </Button>
           )}
         </div>
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs text-gray-600">Document Uploads</span>
-              <span className="text-xs font-medium text-gray-900">
-                {documentUploads.used} / {isFree ? documentUploads.limit : `${documentUploads.limit} per period`}
-              </span>
-            </div>
-            <div className="w-full bg-gray-200 rounded-full h-2">
-              <div
-                className={`h-2 rounded-full ${
-                  uploadLimitReached ? 'bg-red-500' : 'bg-orange-500'
-                }`}
-                style={{
-                  width: `${Math.min(100, (documentUploads.used / documentUploads.limit) * 100)}%`,
-                }}
-              />
-            </div>
-            {uploadLimitReached && (
-              <p className="text-xs text-red-500 mt-1 flex items-center">
-                <AlertCircle className="h-3 w-3 mr-1" />
-                Limit reached
-              </p>
-            )}
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs text-gray-600">Quiz Generations (includes uploads)</span>
+            <span className="text-xs font-medium text-gray-900">
+              {quizGenerations.used} / {isFree ? quizGenerations.limit : `${quizGenerations.limit} per period`}
+            </span>
           </div>
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs text-gray-600">Quiz Generations</span>
-              <span className="text-xs font-medium text-gray-900">
-                {quizGenerations.used} / {isFree ? quizGenerations.limit : `${quizGenerations.limit} per period`}
-              </span>
-            </div>
-            <div className="w-full bg-gray-200 rounded-full h-2">
-              <div
-                className={`h-2 rounded-full ${
-                  quizLimitReached ? 'bg-red-500' : 'bg-orange-500'
-                }`}
-                style={{
-                  width: `${Math.min(100, (quizGenerations.used / quizGenerations.limit) * 100)}%`,
-                }}
-              />
-            </div>
-            {quizLimitReached && (
-              <p className="text-xs text-red-500 mt-1 flex items-center">
-                <AlertCircle className="h-3 w-3 mr-1" />
-                Limit reached
-              </p>
-            )}
+          <div className="w-full bg-gray-200 rounded-full h-2">
+            <div
+              className={`h-2 rounded-full ${
+                quizLimitReached ? 'bg-red-500' : 'bg-orange-500'
+              }`}
+              style={{
+                width: `${Math.min(100, (quizGenerations.used / quizGenerations.limit) * 100)}%`,
+              }}
+            />
           </div>
+          {quizLimitReached && (
+            <p className="text-xs text-red-500 mt-1 flex items-center">
+              <AlertCircle className="h-3 w-3 mr-1" />
+              Limit reached
+            </p>
+          )}
         </div>
       </CardContent>
     </Card>
@@ -358,7 +346,7 @@ export default function DocumentsPage() {
         >
           <Link href="/dashboard/documents/upload">
             <Plus className="mr-2 h-4 w-4" />
-            Upload Slides
+            Generate Quiz
           </Link>
         </Button>
       </div>

@@ -216,7 +216,6 @@ export const usageTracking = pgTable('usage_tracking', {
     .references(() => users.id),
   periodStart: timestamp('period_start').notNull(),
   periodEnd: timestamp('period_end').notNull(),
-  documentUploads: integer('document_uploads').notNull().default(0),
   quizGenerations: integer('quiz_generations').notNull().default(0),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),

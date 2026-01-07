@@ -1,0 +1,1 @@
+ALTER TABLE "usage_tracking" DROP COLUMN "document_uploads";
