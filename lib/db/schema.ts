@@ -104,6 +104,7 @@ export const documents = pgTable('documents', {
     .notNull()
     .default('uploaded'),
   pageCount: integer('page_count'),
+  summary: jsonb('summary'), // Array of summary sections with title and points, or legacy flat array of strings
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
 

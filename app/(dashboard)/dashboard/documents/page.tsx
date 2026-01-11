@@ -236,9 +236,22 @@ function DocumentsList() {
                 {doc.status === 'ready' && !doc.quizStatus && (
                   <span className="text-xs text-gray-500">Generating quiz...</span>
                 )}
-                {/* Show button for ready quizzes (View Quiz), failed quizzes (Retry), or uploaded/failed documents */}
+                {/* Show "View" button for ready documents */}
+                {doc.status === 'ready' && (
+                  <Button
+                    asChild
+                    size="sm"
+                    className="bg-orange-500 hover:bg-orange-600 text-white"
+                  >
+                    <Link href={`/dashboard/documents/${doc.id}`}>
+                      <Eye className="mr-2 h-4 w-4" />
+                      View
+                    </Link>
+                  </Button>
+                )}
+                {/* Show retry button for failed documents or failed quizzes */}
                 {((doc.status === 'uploaded' || doc.status === 'failed') || 
-                  (doc.status === 'ready' && (doc.quizStatus === 'failed' || doc.quizStatus === 'ready'))) && (
+                  (doc.status === 'ready' && doc.quizStatus === 'failed')) && (
                   <GenerateQuizButton 
                     documentId={doc.id} 
                     quizId={doc.quizId} 

@@ -101,6 +101,28 @@ function TakeQuiz() {
               </p>
             </div>
 
+            <div className="flex space-x-4 justify-center pt-4">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowResults(false);
+                  setCurrentQuestionIndex(0);
+                  setAnswers({});
+                }}
+              >
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Retake Quiz
+              </Button>
+              <Button
+                className="bg-orange-500 hover:bg-orange-600 text-white"
+                asChild
+              >
+                <Link href={`/dashboard/quizzes/${quizId}`}>
+                  Back to Quiz
+                </Link>
+              </Button>
+            </div>
+
             <div className="space-y-4">
               {quiz.questions.map((question, index) => {
                 const userAnswer = answers[question.id];

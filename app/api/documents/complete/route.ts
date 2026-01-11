@@ -7,6 +7,7 @@ import { isR2Configured } from '@/lib/storage';
 import { extractTextFromDocument } from '@/lib/extraction';
 import { chunkDocument, estimateTokenCount } from '@/lib/chunking';
 import { generateEmbeddings } from '@/lib/embeddings';
+import { generateSummary } from '@/lib/generation';
 import { eq } from 'drizzle-orm';
 import { startQuizGenerationForUser } from '@/app/api/quizzes/generate/route';
 
@@ -172,6 +173,26 @@ async function processDocumentAsync(
       method: extractionMethod 
     });
 
+    // Generate summary
+    let summary: any = null;
+    try {
+      console.log('[processing] Generating summary', { documentId, textLength: extractedText.length });
+      if (!extractedText || extractedText.trim().length === 0) {
+        console.warn('[processing] Extracted text is empty, skipping summary generation');
+      } else {
+        summary = await generateSummary(extractedText);
+        console.log('[processing] Generated summary', { documentId, sectionCount: summary.length });
+      }
+    } catch (error) {
+      console.error('[processing] Failed to generate summary:', error);
+      // Log the full error for debugging
+      if (error instanceof Error) {
+        console.error('[processing] Summary generation error details:', error.message, error.stack);
+      }
+      // Don't throw - document processing can continue without summary
+      // Summary can be null and user can retry later if needed
+    }
+
     // Chunk the document
     console.log('[processing] Starting chunking', { documentId });
     const chunks = chunkDocument(extractedText);
@@ -227,10 +248,13 @@ async function processDocumentAsync(
       console.log('[processing] Stored chunks in database', { documentId, chunkCount: newChunks.length });
     }
 
-    // Update document status to ready
+    // Update document status to ready and save summary
     await db
       .update(documents)
-      .set({ status: 'ready' })
+      .set({ 
+        status: 'ready',
+        summary: summary ? summary : null
+      })
       .where(eq(documents.id, documentId));
 
     console.log('[processing] Document processing complete', { documentId });

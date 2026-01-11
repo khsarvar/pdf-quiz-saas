@@ -210,3 +210,183 @@ Return the questions as a JSON object with this exact structure:
     );
   }
 }
+
+export interface SummarySection {
+  title: string;
+  points: string[];
+}
+
+/**
+ * Generate summary as organized sections with bullet points from extracted text
+ * @param extractedText The extracted text from the document
+ * @returns Array of summary sections with titles and bullet points
+ */
+export async function generateSummary(
+  extractedText: string
+): Promise<SummarySection[]> {
+  const openai = getOpenAIClient();
+
+  if (!extractedText || extractedText.trim().length === 0) {
+    throw new Error('Extracted text is empty. Cannot generate summary.');
+  }
+
+  // Limit text length to avoid token limits
+  // Target: ~20-25k tokens for content (leaving room for prompt/response)
+  const maxTokens = 25000;
+  let textToSummarize = extractedText;
+  
+  // Rough estimate: 1 token ≈ 4 characters
+  const estimatedTokens = Math.ceil(textToSummarize.length / 4);
+  if (estimatedTokens > maxTokens) {
+    // Truncate to approximately maxTokens
+    const maxChars = maxTokens * 4;
+    textToSummarize = textToSummarize.substring(0, maxChars);
+    console.log('[summary] Truncated text to fit token limit', { 
+      originalLength: extractedText.length,
+      truncatedLength: textToSummarize.length 
+    });
+  }
+
+  const systemPrompt = `You are an expert educator creating well-organized summaries of educational content. 
+Generate a structured summary organized into logical sections with clear titles and bullet points.
+- Organize content into 3-6 thematic sections (e.g., "Key Concepts", "Important Definitions", "Main Takeaways", "Applications", etc.)
+- Each section should have a clear, descriptive title
+- Include 2-5 bullet points per section
+- Use bold formatting for key terms within bullet points (use **term** syntax)
+- Focus on the most important concepts and information
+- Use clear, concise language
+- Each bullet point should be a complete, meaningful statement
+
+Return your response as a JSON object with a "sections" array. Each section must have a "title" and "points" array.`;
+
+  const userPrompt = `Create a well-organized summary with labeled sections from the following lecture slide content:
+
+${textToSummarize}
+
+Return the summary as a JSON object with this exact structure:
+{
+  "sections": [
+    {
+      "title": "Section Title Here",
+      "points": [
+        "First key point with **important term** highlighted",
+        "Second important point",
+        "Third main idea"
+      ]
+    },
+    {
+      "title": "Another Section",
+      "points": [
+        "Point one",
+        "Point two"
+      ]
+    }
+  ]
+}`;
+
+  try {
+    const response = await openai.responses.create({
+      model: process.env.OPENAI_MODEL || 'gpt-5-nano', // Use gpt-5-nano by default for cost efficiency
+      instructions: systemPrompt,
+      input: userPrompt,
+      text: { format: { type: 'json_object' } },
+      reasoning: { effort: "low" },
+      max_output_tokens: 6000, // Enough for multiple sections with bullet points
+    });
+
+    if (response.error) {
+      throw new Error(
+        `OpenAI response error: ${response.error.message || response.error.code || 'Unknown error'}`
+      );
+    }
+
+    const content = response.output_text;
+    if (!content) {
+      throw new Error('No response content from OpenAI API');
+    }
+
+    // Parse the JSON response
+    let parsedResponse: { sections?: Array<{ title: string; points: string[] }> };
+    try {
+      parsedResponse = JSON.parse(content);
+    } catch (parseError) {
+      console.error('Failed to parse OpenAI response:', content);
+      throw new Error('Invalid JSON response from OpenAI API');
+    }
+
+    // Validate response structure
+    if (!parsedResponse.sections || !Array.isArray(parsedResponse.sections)) {
+      throw new Error('Invalid response format: missing sections array');
+    }
+
+    // Validate and clean up each section
+    const sections: SummarySection[] = parsedResponse.sections
+      .map((section: any, sectionIndex: number) => {
+        if (!section || typeof section !== 'object') {
+          throw new Error(
+            `Invalid section at index ${sectionIndex}: must be an object`
+          );
+        }
+        if (!section.title || typeof section.title !== 'string') {
+          throw new Error(
+            `Invalid section title at index ${sectionIndex}: must be a string`
+          );
+        }
+        if (!Array.isArray(section.points)) {
+          throw new Error(
+            `Invalid section points at index ${sectionIndex}: must be an array`
+          );
+        }
+
+        const points = section.points
+          .map((point: any, pointIndex: number) => {
+            if (!point || typeof point !== 'string') {
+              throw new Error(
+                `Invalid point at section ${sectionIndex}, point ${pointIndex}: must be a string`
+              );
+            }
+            return String(point).trim();
+          })
+          .filter((point: string) => point.length > 0); // Remove empty points
+
+        if (points.length === 0) {
+          throw new Error(
+            `Section "${section.title}" has no valid points`
+          );
+        }
+
+        return {
+          title: String(section.title).trim(),
+          points,
+        };
+      })
+      .filter((section: SummarySection) => section.points.length > 0); // Remove sections with no points
+
+    if (sections.length === 0) {
+      throw new Error('No valid summary sections generated');
+    }
+
+    const totalPoints = sections.reduce((sum, section) => sum + section.points.length, 0);
+    console.log('[summary] Generated summary', { sectionCount: sections.length, totalPointCount: totalPoints });
+    return sections;
+  } catch (error) {
+    // Re-throw if it's already our custom error
+    if (error instanceof Error && error.message.includes('OPENAI_API_KEY')) {
+      throw error;
+    }
+
+    // Handle OpenAI API errors
+    if (error instanceof OpenAI.APIError) {
+      console.error('OpenAI API Error:', error.status, error.message);
+      throw new Error(
+        `OpenAI API error: ${error.message}. Please check your API key and try again.`
+      );
+    }
+
+    // Handle other errors
+    console.error('Error generating summary:', error);
+    throw new Error(
+      `Failed to generate summary: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
+  }
+}
