@@ -6,7 +6,7 @@ import { ArrowLeft, CheckCircle, XCircle, RotateCcw } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import useSWR from 'swr';
-import { Suspense, useState } from 'react';
+import { Suspense, useState, useEffect } from 'react';
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -28,6 +28,7 @@ interface Quiz {
   title: string;
   status: string;
   createdAt: string;
+  documentId: number;
   questions: Question[];
 }
 
@@ -43,6 +44,8 @@ function TakeQuiz() {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [showResults, setShowResults] = useState(false);
+  const [attemptSaved, setAttemptSaved] = useState(false);
+  const [savingAttempt, setSavingAttempt] = useState(false);
 
   if (isLoading) {
     return (
@@ -62,12 +65,54 @@ function TakeQuiz() {
             {!quiz ? 'Quiz not found' : 'Quiz is not ready'}
           </p>
           <Button asChild variant="outline" className="mt-4">
-            <Link href="/dashboard/documents">Back to Documents</Link>
+            <Link href={quiz?.documentId ? `/dashboard/documents/${quiz.documentId}` : "/dashboard/documents"}>
+              Back to Summary
+            </Link>
           </Button>
         </CardContent>
       </Card>
     );
   }
+
+  // Save attempt when results are shown
+  useEffect(() => {
+    if (showResults && !attemptSaved && !savingAttempt && quiz) {
+      const totalQuestions = quiz.questions.length;
+      let correctAnswers = 0;
+
+      quiz.questions.forEach((question) => {
+        const userAnswer = answers[question.id];
+        if (userAnswer !== undefined && question.answer !== null) {
+          if (userAnswer === question.answer) {
+            correctAnswers++;
+          }
+        }
+      });
+
+      const score = Math.round((correctAnswers / totalQuestions) * 100);
+
+      setSavingAttempt(true);
+      fetch(`/api/quizzes/${quizId}/attempts`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          answers,
+          score,
+        }),
+      })
+        .then((res) => res.json())
+        .then(() => {
+          setAttemptSaved(true);
+          setSavingAttempt(false);
+        })
+        .catch((error) => {
+          console.error('Error saving quiz attempt:', error);
+          setSavingAttempt(false);
+        });
+    }
+  }, [showResults, attemptSaved, savingAttempt, quiz, quizId, answers]);
 
   if (showResults) {
     // Calculate score
@@ -222,6 +267,7 @@ function TakeQuiz() {
                   setShowResults(false);
                   setCurrentQuestionIndex(0);
                   setAnswers({});
+                  setAttemptSaved(false);
                 }}
               >
                 <RotateCcw className="mr-2 h-4 w-4" />

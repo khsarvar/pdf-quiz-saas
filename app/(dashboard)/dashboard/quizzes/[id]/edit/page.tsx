@@ -32,6 +32,7 @@ interface Quiz {
   title: string;
   status: string;
   createdAt: string;
+  documentId: number;
   questions: Question[];
 }
 
@@ -296,7 +297,7 @@ function QuizEdit() {
         <CardContent className="p-6 text-center">
           <p className="text-gray-500">Quiz not found</p>
           <Button asChild variant="outline" className="mt-4">
-            <Link href="/dashboard/documents">Back to Documents</Link>
+            <Link href="/dashboard/documents">Back to Summary</Link>
           </Button>
         </CardContent>
       </Card>

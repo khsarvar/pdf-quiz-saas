@@ -8,6 +8,7 @@ import {
   questions,
   extractions,
   documentChunks,
+  quizAttempts,
 } from './schema';
 import { cookies } from 'next/headers';
 import { verifyToken } from '@/lib/auth/session';
@@ -273,4 +274,59 @@ export async function hasChunksForDocument(documentId: number): Promise<boolean>
     .limit(1);
 
   return result.length > 0;
+}
+
+// Quiz attempt queries
+export async function createQuizAttempt(
+  quizId: number,
+  userId: number,
+  answers: Record<number, number>,
+  score: number
+) {
+  const result = await db
+    .insert(quizAttempts)
+    .values({
+      quizId,
+      userId,
+      answers: answers as any,
+      score,
+      completedAt: new Date(),
+    })
+    .returning();
+
+  return result[0];
+}
+
+export async function getQuizAttempts(quizId: number) {
+  const user = await getUser();
+  if (!user) {
+    return [];
+  }
+
+  // Verify user owns the quiz
+  const quiz = await getQuizById(quizId);
+  if (!quiz) {
+    return [];
+  }
+
+  return await db
+    .select()
+    .from(quizAttempts)
+    .where(and(eq(quizAttempts.quizId, quizId), eq(quizAttempts.userId, user.id)))
+    .orderBy(desc(quizAttempts.completedAt));
+}
+
+export async function getQuizAttemptById(attemptId: number) {
+  const user = await getUser();
+  if (!user) {
+    return null;
+  }
+
+  const result = await db
+    .select()
+    .from(quizAttempts)
+    .where(and(eq(quizAttempts.id, attemptId), eq(quizAttempts.userId, user.id)))
+    .limit(1);
+
+  return result.length > 0 ? result[0] : null;
 }

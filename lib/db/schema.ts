@@ -68,6 +68,7 @@ export const usersRelations = relations(users, ({ many }) => ({
   documents: many(documents),
   quizzes: many(quizzes),
   usageTracking: many(usageTracking),
+  quizAttempts: many(quizAttempts),
 }));
 
 export const activityLogsRelations = relations(activityLogs, ({ one }) => ({
@@ -200,12 +201,38 @@ export const quizzesRelations = relations(quizzes, ({ one, many }) => ({
     references: [documents.id],
   }),
   questions: many(questions),
+  attempts: many(quizAttempts),
 }));
 
 export const questionsRelations = relations(questions, ({ one }) => ({
   quiz: one(quizzes, {
     fields: [questions.quizId],
     references: [quizzes.id],
+  }),
+}));
+
+export const quizAttempts = pgTable('quiz_attempts', {
+  id: serial('id').primaryKey(),
+  quizId: integer('quiz_id')
+    .notNull()
+    .references(() => quizzes.id),
+  userId: integer('user_id')
+    .notNull()
+    .references(() => users.id),
+  answers: jsonb('answers').notNull(), // Record<questionId, answerIndex>
+  score: integer('score').notNull(), // Percentage (0-100)
+  completedAt: timestamp('completed_at').notNull().defaultNow(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export const quizAttemptsRelations = relations(quizAttempts, ({ one }) => ({
+  quiz: one(quizzes, {
+    fields: [quizAttempts.quizId],
+    references: [quizzes.id],
+  }),
+  user: one(users, {
+    fields: [quizAttempts.userId],
+    references: [users.id],
   }),
 }));
 
@@ -242,3 +269,5 @@ export type Question = typeof questions.$inferSelect;
 export type NewQuestion = typeof questions.$inferInsert;
 export type UsageTracking = typeof usageTracking.$inferSelect;
 export type NewUsageTracking = typeof usageTracking.$inferInsert;
+export type QuizAttempt = typeof quizAttempts.$inferSelect;
+export type NewQuizAttempt = typeof quizAttempts.$inferInsert;

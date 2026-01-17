@@ -2,7 +2,7 @@
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowLeft, Edit, Play } from 'lucide-react';
+import { ArrowLeft, Edit, Play, Eye, Clock } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import useSWR from 'swr';
@@ -28,7 +28,18 @@ interface Quiz {
   title: string;
   status: string;
   createdAt: string;
+  documentId: number;
   questions: Question[];
+}
+
+interface QuizAttempt {
+  id: number;
+  quizId: number;
+  userId: number;
+  answers: Record<number, number>;
+  score: number;
+  completedAt: string;
+  createdAt: string;
 }
 
 function QuizDetail() {
@@ -36,6 +47,10 @@ function QuizDetail() {
   const quizId = params.id as string;
   const { data: quiz, isLoading } = useSWR<Quiz>(
     `/api/quizzes/${quizId}`,
+    fetcher
+  );
+  const { data: attempts, isLoading: attemptsLoading } = useSWR<QuizAttempt[]>(
+    quiz?.status === 'ready' ? `/api/quizzes/${quizId}/attempts` : null,
     fetcher
   );
 
@@ -60,7 +75,7 @@ function QuizDetail() {
         <CardContent className="p-6 text-center">
           <p className="text-gray-500">Quiz not found</p>
           <Button asChild variant="outline" className="mt-4">
-            <Link href="/dashboard/documents">Back to Documents</Link>
+            <Link href="/dashboard/documents">Back to Summary</Link>
           </Button>
         </CardContent>
       </Card>
@@ -75,7 +90,9 @@ function QuizDetail() {
             Quiz is {quiz.status}. Please wait for it to be ready.
           </p>
           <Button asChild variant="outline" className="mt-4">
-            <Link href="/dashboard/documents">Back to Documents</Link>
+            <Link href={quiz.documentId ? `/dashboard/documents/${quiz.documentId}` : "/dashboard/documents"}>
+              Back to Summary
+            </Link>
           </Button>
         </CardContent>
       </Card>
@@ -87,11 +104,11 @@ function QuizDetail() {
       <div className="flex items-center justify-between">
         <div>
           <Link
-            href="/dashboard/documents"
+            href={quiz.documentId ? `/dashboard/documents/${quiz.documentId}` : "/dashboard/documents"}
             className="text-sm text-gray-600 hover:text-gray-900 flex items-center mb-2"
           >
             <ArrowLeft className="h-4 w-4 mr-1" />
-            Back to Documents
+            Back to Summary
           </Link>
           <h1 className="text-lg lg:text-2xl font-medium text-gray-900">
             {quiz.title}
@@ -117,82 +134,60 @@ function QuizDetail() {
         </div>
       </div>
 
-      <div className="space-y-4">
-        {quiz.questions.map((question, index) => (
-          <Card key={question.id}>
-            <CardHeader>
-              <CardTitle className="text-base">
-                Question {index + 1} of {quiz.questions.length}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <p className="text-gray-900 font-medium">{question.prompt}</p>
-
-              {question.choices && question.choices.length > 0 && (
-                <div className="space-y-2">
-                  {question.choices.map((choice, choiceIndex) => {
-                    const isCorrect = question.answer !== null && choiceIndex === question.answer;
-                    return (
-                      <div
-                        key={choiceIndex}
-                        className={`p-3 rounded border ${
-                          isCorrect
-                            ? 'bg-green-50 border-green-200'
-                            : 'bg-gray-50 border-gray-200'
-                        }`}
-                      >
-                        <div className="flex items-start">
-                          <span className="font-medium mr-2">
-                            {String.fromCharCode(65 + choiceIndex)}.
-                          </span>
-                          <span>{choice}</span>
-                          {isCorrect && (
-                            <span className="ml-auto text-green-600 font-medium">
-                              ✓ Correct
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Quiz Attempt History</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {attemptsLoading ? (
+            <div className="space-y-4">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="h-16 bg-gray-200 rounded animate-pulse"></div>
+              ))}
+            </div>
+          ) : attempts && attempts.length > 0 ? (
+            <div className="space-y-4">
+              {attempts.map((attempt, index) => (
+                <Card key={attempt.id} className="border-gray-200">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-4">
+                        <div className="flex items-center space-x-2">
+                          <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center">
+                            <span className="text-orange-600 font-semibold">
+                              {attempt.score}%
                             </span>
-                          )}
+                          </div>
+                          <div>
+                            <p className="font-medium text-gray-900">
+                              Attempt {attempts.length - index}
+                            </p>
+                            <p className="text-sm text-gray-500 flex items-center">
+                              <Clock className="h-3 w-3 mr-1" />
+                              {new Date(attempt.completedAt).toLocaleString()}
+                            </p>
+                          </div>
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {question.explanation && (
-                <div className="mt-4 p-3 bg-blue-50 rounded border border-blue-200">
-                  <p className="text-sm font-medium text-blue-900 mb-1">
-                    Explanation:
-                  </p>
-                  <p className="text-sm text-blue-800">{question.explanation}</p>
-                </div>
-              )}
-
-              {question.sourceRef && (
-                <div className="mt-2 space-y-2">
-                  {question.sourceRef.text && (
-                    <div className="p-2 bg-gray-50 rounded border border-gray-200">
-                      <p className="text-xs font-medium text-gray-700 mb-1">
-                        Source Snippet:
-                      </p>
-                      <p className="text-xs text-gray-600 italic">
-                        "{question.sourceRef.text}"
-                      </p>
+                      <Button variant="outline" size="sm" asChild>
+                        <Link href={`/dashboard/quizzes/${quizId}/attempts/${attempt.id}`}>
+                          <Eye className="mr-2 h-4 w-4" />
+                          View
+                        </Link>
+                      </Button>
                     </div>
-                  )}
-                  <div className="text-xs text-gray-500">
-                    {question.sourceRef.page && (
-                      <span>Page {question.sourceRef.page}</span>
-                    )}
-                    {question.sourceRef.slide && (
-                      <span>Slide {question.sourceRef.slide}</span>
-                    )}
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500">
+              <p>No quiz attempts yet.</p>
+              <p className="text-sm mt-2">Take the quiz to see your results here!</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
