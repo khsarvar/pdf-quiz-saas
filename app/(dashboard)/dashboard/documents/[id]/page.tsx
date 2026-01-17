@@ -6,7 +6,7 @@ import { ArrowLeft, FileText, Play, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import useSWR from 'swr';
-import { Suspense } from 'react';
+import { Suspense, ReactElement } from 'react';
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -28,7 +28,7 @@ interface Document {
 
 // Helper function to parse markdown bold syntax and render it
 function parseBoldText(text: string) {
-  const parts: (string | JSX.Element)[] = [];
+  const parts: (string | ReactElement)[] = [];
   const regex = /\*\*(.+?)\*\*/g;
   let lastIndex = 0;
   let match;
