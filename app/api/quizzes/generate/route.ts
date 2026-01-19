@@ -1,84 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db/drizzle';
 import {
-  documents,
   quizzes,
-  questions,
   users,
   type NewQuiz,
-  type NewQuestion,
 } from '@/lib/db/schema';
 import { getUser, getDocumentById, hasChunksForDocument } from '@/lib/db/queries';
-import { generateQuestions } from '@/lib/generation';
 import { eq, and } from 'drizzle-orm';
-import { checkQuizGenerationLimit, incrementQuizGeneration, getPlanConfig } from '@/lib/subscriptions/usage';
-
-/**
- * Process quiz generation asynchronously: generate questions and save them
- */
-export async function generateQuizAsync(
-  quizId: number,
-  documentId: number,
-  questionCount: number
-): Promise<void> {
-  try {
-    console.log('[quiz-generation] Starting quiz generation', { quizId, documentId });
-
-    // Generate questions using LLM
-    const generatedQuestions = await generateQuestions(documentId, questionCount);
-    console.log('[quiz-generation] Generated questions', { quizId, questionCount: generatedQuestions.length });
-
-    // Create questions
-    const newQuestions: NewQuestion[] = generatedQuestions.map((q) => ({
-      quizId,
-      type: 'multiple_choice',
-      prompt: q.prompt,
-      choices: q.choices,
-      answer: q.answer,
-      explanation: q.explanation,
-      sourceRef: q.sourceRef,
-    }));
-
-    await db.insert(questions).values(newQuestions);
-    console.log('[quiz-generation] Saved questions to database', { quizId, questionCount: newQuestions.length });
-
-    // Update quiz status to ready
-    await db
-      .update(quizzes)
-      .set({ status: 'ready' })
-      .where(eq(quizzes.id, quizId));
-
-    // Increment usage count only on successful completion (for paid plans)
-    // Fetch user from quiz record
-    const [quiz] = await db
-      .select({ userId: quizzes.userId })
-      .from(quizzes)
-      .where(eq(quizzes.id, quizId))
-      .limit(1);
-
-    if (quiz) {
-      const [user] = await db
-        .select()
-        .from(users)
-        .where(eq(users.id, quiz.userId))
-        .limit(1);
-
-      if (user) {
-        await incrementQuizGeneration(user);
-      }
-    }
-
-    console.log('[quiz-generation] Quiz generation complete', { quizId });
-  } catch (error) {
-    console.error('[quiz-generation] Error generating quiz:', error);
-    // Update quiz status to failed
-    await db
-      .update(quizzes)
-      .set({ status: 'failed' })
-      .where(eq(quizzes.id, quizId));
-    throw error;
-  }
-}
+import { checkQuizGenerationLimit, getPlanConfig } from '@/lib/subscriptions/usage';
+import { enqueueQuizGeneration } from '@/lib/sqs/client';
 
 /**
  * Start quiz generation with a user object (for background processing)
@@ -200,15 +130,18 @@ export async function startQuizGenerationForUser(
     return { error: 'Failed to create quiz record' };
   }
 
-  // Note: incrementQuizGeneration is now called in generateQuizAsync after successful completion
-
-  // Process quiz generation in background: generate questions
-  // We do this asynchronously so the function can return quickly
+  // Enqueue quiz generation job to SQS
   const questionCount = plan.questionsPerQuiz;
-  generateQuizAsync(createdQuiz.id, documentId, questionCount).catch((error) => {
-    console.error('Error generating quiz:', error);
-    // Error handling is done in generateQuizAsync
-  });
+  try {
+    await enqueueQuizGeneration(createdQuiz.id, documentId, questionCount);
+  } catch (sqsError) {
+    console.error('Error enqueueing quiz generation:', sqsError);
+    // Update quiz status to failed if enqueueing fails
+    await db.update(quizzes)
+      .set({ status: 'failed' })
+      .where(eq(quizzes.id, createdQuiz.id));
+    return { error: 'Failed to queue quiz generation' };
+  }
 
   return { quizId: createdQuiz.id };
 }
