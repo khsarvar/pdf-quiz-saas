@@ -6,6 +6,11 @@
 .pnp.js
 .yarn/install-state.gz
 
+# terraform secrets
+terraform/environments/**/*.secrets.tfvars
+terraform/.terraform/
+terraform/terraform.tfstate
+terraform/terraform.tfstate.*
 # testing
 /coverage
 

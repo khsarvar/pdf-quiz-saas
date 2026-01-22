@@ -166,10 +166,10 @@ resource "aws_ecs_task_definition" "web" {
         { name = "AWS_REGION", value = var.aws_region },
         { name = "SQS_DOCUMENT_QUEUE_URL", value = var.document_queue_url },
         { name = "SQS_QUIZ_QUEUE_URL", value = var.quiz_queue_url },
+        { name = "POSTGRES_URL", value = var.database_url },
       ]
 
       secrets = [
-        { name = "POSTGRES_URL", valueFrom = "${var.secrets_arn}:POSTGRES_URL::" },
         { name = "STRIPE_SECRET_KEY", valueFrom = "${var.secrets_arn}:STRIPE_SECRET_KEY::" },
         { name = "STRIPE_WEBHOOK_SECRET", valueFrom = "${var.secrets_arn}:STRIPE_WEBHOOK_SECRET::" },
         { name = "OPENAI_API_KEY", valueFrom = "${var.secrets_arn}:OPENAI_API_KEY::" },
@@ -226,10 +226,10 @@ resource "aws_ecs_task_definition" "worker" {
         { name = "SQS_QUIZ_QUEUE_URL", value = var.quiz_queue_url },
         { name = "SQS_DOCUMENT_QUEUE_NAME", value = "document-processing" },
         { name = "SQS_QUIZ_QUEUE_NAME", value = "quiz-generation" },
+        { name = "POSTGRES_URL", value = var.database_url },
       ]
 
       secrets = [
-        { name = "POSTGRES_URL", valueFrom = "${var.secrets_arn}:POSTGRES_URL::" },
         { name = "OPENAI_API_KEY", valueFrom = "${var.secrets_arn}:OPENAI_API_KEY::" },
         { name = "R2_ACCOUNT_ID", valueFrom = "${var.secrets_arn}:R2_ACCOUNT_ID::" },
         { name = "R2_ACCESS_KEY_ID", valueFrom = "${var.secrets_arn}:R2_ACCESS_KEY_ID::" },
@@ -272,11 +272,12 @@ resource "aws_ecs_service" "web" {
     container_name   = "web"
     container_port   = 3000
   }
-
-  deployment_configuration {
-    maximum_percent         = 200
-    minimum_healthy_percent = 100
-  }
+deployment_maximum_percent = 200
+deployment_minimum_healthy_percent = 100
+  #deployment_configuration {
+   # maximum_percent         = 200
+    #minimum_healthy_percent = 100
+  #}
 
   lifecycle {
     ignore_changes = [task_definition]
@@ -301,10 +302,12 @@ resource "aws_ecs_service" "worker" {
     assign_public_ip = false
   }
 
-  deployment_configuration {
-    maximum_percent         = 200
-    minimum_healthy_percent = 50
-  }
+deployment_maximum_percent = 200
+deployment_minimum_healthy_percent = 100
+ # deployment_configuration {
+   # maximum_percent         = 200
+  #  minimum_healthy_percent = 50
+  #}
 
   lifecycle {
     ignore_changes = [task_definition]

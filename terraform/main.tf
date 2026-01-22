@@ -1,4 +1,5 @@
 # VPC Module
+
 module "vpc" {
   source = "./modules/vpc"
 
@@ -22,7 +23,7 @@ module "secrets" {
 
   project_name          = var.project_name
   environment           = var.environment
-  db_password           = random_password.db_password.result
+  db_password           = local.db_password
   stripe_secret_key     = var.stripe_secret_key
   stripe_webhook_secret = var.stripe_webhook_secret
   openai_api_key        = var.openai_api_key
@@ -40,6 +41,10 @@ resource "random_password" "db_password" {
   override_special = "!#$%&*()-_=+[]{}<>:?"
 }
 
+locals {
+  db_password = var.db_password != "" ? var.db_password : random_password.db_password.result
+}
+
 # RDS Module
 module "rds" {
   source = "./modules/rds"
@@ -52,7 +57,7 @@ module "rds" {
   db_instance_class  = var.db_instance_class
   db_name            = var.db_name
   db_username        = var.db_username
-  db_password        = random_password.db_password.result
+  db_password        = local.db_password
   db_multi_az        = var.db_multi_az
   ecs_security_group = module.ecs.ecs_security_group_id
 }
@@ -106,7 +111,7 @@ module "ecs" {
   secrets_arn = module.secrets.secrets_arn
 
   # Database
-  database_url = "postgres://${var.db_username}:${random_password.db_password.result}@${module.rds.db_endpoint}/${var.db_name}"
+  database_url = "postgres://${var.db_username}:${local.db_password}@${module.rds.db_endpoint}/${var.db_name}"
 
   # SQS
   document_queue_url = module.sqs.document_queue_url

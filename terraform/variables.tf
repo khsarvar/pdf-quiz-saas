@@ -1,7 +1,7 @@
 variable "aws_region" {
   description = "AWS region to deploy resources"
   type        = string
-  default     = "us-east-1"
+  default     = "us-east-2"
 }
 
 variable "project_name" {
@@ -26,7 +26,7 @@ variable "vpc_cidr" {
 variable "availability_zones" {
   description = "List of availability zones"
   type        = list(string)
-  default     = ["us-east-1a", "us-east-1b"]
+  default     = ["us-east-2a", "us-east-2b"]
 }
 
 # RDS Configuration
@@ -53,6 +53,13 @@ variable "db_multi_az" {
   description = "Enable Multi-AZ deployment for RDS"
   type        = bool
   default     = true
+}
+
+variable "db_password" {
+  description = "Database master password (optional override)"
+  type        = string
+  sensitive   = true
+  default     = ""
 }
 
 # ECS Configuration

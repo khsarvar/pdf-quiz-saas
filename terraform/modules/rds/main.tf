@@ -21,6 +21,7 @@ resource "aws_security_group" "rds" {
     protocol        = "tcp"
     security_groups = [var.ecs_security_group]
     description     = "PostgreSQL from ECS"
+    #cidr_blocks = ["172.58.124.143/32"]
   }
 
   egress {
@@ -39,11 +40,11 @@ resource "aws_security_group" "rds" {
 # RDS Parameter Group for pgvector
 resource "aws_db_parameter_group" "main" {
   name   = "${var.project_name}-${var.environment}-pg16-params"
-  family = "postgres16"
+  family = "postgres17"
 
   parameter {
     name         = "shared_preload_libraries"
-    value        = "pg_stat_statements,pgvector"
+    value        = "pg_stat_statements"
     apply_method = "pending-reboot"
   }
 
@@ -57,7 +58,6 @@ resource "aws_db_instance" "main" {
   identifier = "${var.project_name}-${var.environment}-postgres"
 
   engine               = "postgres"
-  engine_version       = "16.4"
   instance_class       = var.db_instance_class
   allocated_storage    = 20
   max_allocated_storage = 100

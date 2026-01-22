@@ -58,3 +58,9 @@ output "secrets_arn" {
   description = "ARN of the Secrets Manager secret"
   value       = module.secrets.secrets_arn
 }
+
+output "db_password" {
+  description = "Generated database password"
+  value       = local.db_password
+  sensitive   = true
+}

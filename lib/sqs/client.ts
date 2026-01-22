@@ -8,7 +8,7 @@ import {
 } from '@aws-sdk/client-sqs';
 
 // SQS Configuration
-const AWS_REGION = process.env.AWS_REGION || 'us-east-1';
+const AWS_REGION = process.env.AWS_REGION || 'us-east-2';
 const DOCUMENT_PROCESSING_QUEUE = process.env.SQS_DOCUMENT_QUEUE_NAME || 'document-processing-queue';
 const QUIZ_GENERATION_QUEUE = process.env.SQS_QUIZ_QUEUE_NAME || 'quiz-generation-queue';
 

@@ -1,13 +1,13 @@
 # Production Environment Configuration
 # Copy this file and fill in the values for your environment
 
-aws_region   = "us-east-1"
+aws_region   = "us-east-2"
 project_name = "saas-starter"
 environment  = "production"
 
 # VPC Configuration
 vpc_cidr           = "10.0.0.0/16"
-availability_zones = ["us-east-1a", "us-east-1b"]
+availability_zones = ["us-east-2a", "us-east-2b"]
 
 # RDS Configuration
 db_instance_class = "db.t3.medium"
@@ -26,7 +26,7 @@ worker_desired_count = 1
 
 # Domain Configuration (update with your domain)
 # domain_name         = "app.example.com"
-# acm_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/xxx"
+acm_certificate_arn = ""
 
 # Application Secrets (provide via environment variables or separate secrets file)
 # These should NOT be committed to version control
