@@ -21,6 +21,14 @@ COPY . .
 # Set environment variable for standalone output
 ENV NEXT_TELEMETRY_DISABLED=1
 
+# Build-time database URL for Next.js build steps
+ARG POSTGRES_URL
+ENV POSTGRES_URL=$POSTGRES_URL
+
+# Build-time Stripe key for routes evaluated during Next.js build
+ARG STRIPE_SECRET_KEY
+ENV STRIPE_SECRET_KEY=$STRIPE_SECRET_KEY
+
 # Build the application
 RUN corepack enable && corepack prepare pnpm@latest --activate
 RUN pnpm run build

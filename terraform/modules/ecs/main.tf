@@ -177,7 +177,7 @@ resource "aws_ecs_task_definition" "web" {
         { name = "R2_ACCESS_KEY_ID", valueFrom = "${var.secrets_arn}:R2_ACCESS_KEY_ID::" },
         { name = "R2_SECRET_ACCESS_KEY", valueFrom = "${var.secrets_arn}:R2_SECRET_ACCESS_KEY::" },
         { name = "R2_BUCKET_NAME", valueFrom = "${var.secrets_arn}:R2_BUCKET_NAME::" },
-        { name = "JWT_SECRET", valueFrom = "${var.secrets_arn}:JWT_SECRET::" },
+        { name = "AUTH_SECRET", valueFrom = "${var.secrets_arn}:AUTH_SECRET::" },
       ]
 
       logConfiguration = {

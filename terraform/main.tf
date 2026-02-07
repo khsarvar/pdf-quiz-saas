@@ -111,7 +111,7 @@ module "ecs" {
   secrets_arn = module.secrets.secrets_arn
 
   # Database
-  database_url = "postgres://${var.db_username}:${local.db_password}@${module.rds.db_endpoint}/${var.db_name}"
+  database_url = "postgres://${var.db_username}:${local.db_password}@${module.rds.db_endpoint}/${var.db_name}?sslmode=require"
 
   # SQS
   document_queue_url = module.sqs.document_queue_url
