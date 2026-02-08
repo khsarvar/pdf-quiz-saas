@@ -8,9 +8,12 @@
 
 # terraform secrets
 terraform/environments/**/*.secrets.tfvars
+terraform/environments/**/*.tfvars
+!terraform/environments/**/*.tfvars.example
 terraform/.terraform/
 terraform/terraform.tfstate
 terraform/terraform.tfstate.*
+.idea/
 # testing
 /coverage
 

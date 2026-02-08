@@ -62,6 +62,13 @@ variable "db_password" {
   default     = ""
 }
 
+variable "postgres_url" {
+  description = "PostgreSQL connection URL used by ECS tasks (e.g. Supabase connection string)"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 # ECS Configuration
 variable "web_cpu" {
   description = "CPU units for web service (1024 = 1 vCPU)"
