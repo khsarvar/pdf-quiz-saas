@@ -1,0 +1,57 @@
+# Dependencies
+node_modules
+.pnpm-store
+
+# Build output
+.next
+out
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.test
+.env.production.local
+
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Uploads and temp files
+uploads/
+.tmp-extract/
+*.log
+
+# Documentation
+README.md
+docs/
+
+# Testing
+coverage/
+.nyc_output/
+
+# Development config
+docker-compose.yml
+*.md
+
+# Terraform
+terraform/
+
+# GitHub
+.github/
+
+# Claude
+.claude/
+
+# Cursor
+.cursor/

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="DataSourceManagerImpl" format="xml" multifile-model="true">
+    <data-source source="LOCAL" name="saas_starter@saas-starter-production-postgres.cvgqe824o7t5.us-east-2.rds.amazonaws.com" uuid="8696b0c0-70dc-4232-bb3e-ff6fa01b958a">
+      <driver-ref>postgresql.aws_wrapper</driver-ref>
+      <synchronize>true</synchronize>
+      <jdbc-driver>software.amazon.jdbc.Driver</jdbc-driver>
+      <jdbc-url>jdbc:aws-wrapper:postgresql://saas-starter-production-postgres.cvgqe824o7t5.us-east-2.rds.amazonaws.com:5432/saas_starter</jdbc-url>
+      <working-dir>$ProjectFileDir$</working-dir>
+    </data-source>
+  </component>
+</project>
