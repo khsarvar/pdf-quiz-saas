@@ -1,9 +1,9 @@
 # Production Environment Configuration
-# Copy this file and fill in the values for your environment
+# Copy this file to terraform.tfvars (local only, do not commit) and fill in values.
 
 aws_region   = "us-east-2"
-project_name = "saas-starter"
-environment  = "production"
+project_name = "saas-starter-v2"
+environment  = "prod2"
 
 # VPC Configuration
 vpc_cidr           = "10.0.0.0/16"
@@ -14,6 +14,9 @@ db_instance_class = "db.t3.medium"
 db_name           = "saas_starter"
 db_username       = "postgres"
 db_multi_az       = true
+
+# Database URL for ECS tasks (set in local file or via TF_VAR_postgres_url)
+postgres_url = ""
 
 # ECS Configuration
 web_cpu           = 512
@@ -28,13 +31,5 @@ worker_desired_count = 1
 # domain_name         = "app.example.com"
 acm_certificate_arn = ""
 
-# Application Secrets (provide via environment variables or separate secrets file)
-# These should NOT be committed to version control
-# stripe_secret_key     = ""
-# stripe_webhook_secret = ""
-# openai_api_key        = ""
-# r2_account_id         = ""
-# r2_access_key_id      = ""
-# rß2_secret_access_key  = ""
-# r2_bucket_name        = ""
-# jwt_secret            = ""
+# Application secrets should be passed via environment variables
+# (TF_VAR_stripe_secret_key, TF_VAR_openai_api_key, etc.) or an ignored secrets file.

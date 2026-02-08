@@ -98,8 +98,3 @@ variable "sqs_policy_arn" {
   description = "ARN of the SQS IAM policy"
   type        = string
 }
-
-variable "rds_security_group_id" {
-  description = "ID of the RDS security group"
-  type        = string
-}

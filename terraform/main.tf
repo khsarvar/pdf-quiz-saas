@@ -111,13 +111,10 @@ module "ecs" {
   secrets_arn = module.secrets.secrets_arn
 
   # Database
-  database_url = "postgres://${var.db_username}:${local.db_password}@${module.rds.db_endpoint}/${var.db_name}?sslmode=require"
+  database_url = var.postgres_url
 
   # SQS
   document_queue_url = module.sqs.document_queue_url
   quiz_queue_url     = module.sqs.quiz_queue_url
   sqs_policy_arn     = module.sqs.sqs_policy_arn
-
-  # RDS security group for ingress rules
-  rds_security_group_id = module.rds.security_group_id
 }
