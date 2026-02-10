@@ -15,6 +15,7 @@ import {
   deleteMessage,
   parseMessage,
   enqueueQuizGeneration,
+  changeMessageVisibility,
   QUEUES,
   type DocumentProcessingMessage,
 } from '@/lib/sqs/client';
@@ -213,6 +214,38 @@ export async function pollDocumentQueue(): Promise<void> {
       continue;
     }
 
+    // Idempotency guard: skip if already processed or failed
+    const [existingDoc] = await db
+      .select({ status: documents.status })
+      .from(documents)
+      .where(eq(documents.id, parsed.documentId))
+      .limit(1);
+
+    if (existingDoc && (existingDoc.status === 'ready' || existingDoc.status === 'failed')) {
+      console.log('[document-processor] Skipping already processed document', {
+        documentId: parsed.documentId,
+        status: existingDoc.status,
+      });
+      await deleteMessage(QUEUES.DOCUMENT_PROCESSING, message.ReceiptHandle);
+      continue;
+    }
+
+    // Heartbeat: extend visibility every 4 minutes to prevent reprocessing
+    const heartbeatInterval = setInterval(async () => {
+      try {
+        await changeMessageVisibility(
+          QUEUES.DOCUMENT_PROCESSING,
+          message.ReceiptHandle!,
+          600 // extend by 10 minutes
+        );
+        console.log('[document-processor] Extended message visibility', {
+          documentId: parsed.documentId,
+        });
+      } catch (err) {
+        console.error('[document-processor] Failed to extend visibility:', err);
+      }
+    }, 4 * 60 * 1000); // every 4 minutes
+
     try {
       await processDocument(parsed);
       // Delete message on success
@@ -222,6 +255,8 @@ export async function pollDocumentQueue(): Promise<void> {
       console.error('[document-processor] Failed to process message:', error);
       // Message will become visible again after visibility timeout
       // and will be moved to DLQ after max retries
+    } finally {
+      clearInterval(heartbeatInterval);
     }
   }
 }
