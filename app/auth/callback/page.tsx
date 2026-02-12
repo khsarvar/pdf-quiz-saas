@@ -43,6 +43,7 @@ export default function AuthCallbackPage() {
 
       const redirect = search.get('redirect') || '';
       const priceId = search.get('priceId') || '';
+      const provider = search.get('provider') || '';
 
       const response = await fetch('/api/auth/oauth/complete', {
         method: 'POST',
@@ -52,7 +53,8 @@ export default function AuthCallbackPage() {
         body: JSON.stringify({
           accessToken,
           redirect,
-          priceId
+          priceId,
+          provider
         })
       });
 

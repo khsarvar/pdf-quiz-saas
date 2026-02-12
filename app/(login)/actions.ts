@@ -241,6 +241,40 @@ export const deleteAccount = validatedActionWithUser(
   }
 );
 
+const deleteAccountOAuthSchema = z.object({
+  confirmation: z.string()
+});
+
+export const deleteAccountOAuth = validatedActionWithUser(
+  deleteAccountOAuthSchema,
+  async (data, _, user) => {
+    if (data.confirmation !== 'DELETE') {
+      return {
+        error: 'Please type DELETE to confirm account deletion.'
+      };
+    }
+
+    if (!user.authProvider) {
+      return {
+        error: 'This action is only available for OAuth users.'
+      };
+    }
+
+    await logActivity(user.id, ActivityType.DELETE_ACCOUNT);
+
+    await db
+      .update(users)
+      .set({
+        deletedAt: sql`CURRENT_TIMESTAMP`,
+        email: sql`CONCAT(email, '-', id, '-deleted')`
+      })
+      .where(eq(users.id, user.id));
+
+    (await cookies()).delete('session');
+    redirect('/sign-in');
+  }
+);
+
 const updateAccountSchema = z.object({
   name: z.string().min(1, 'Name is required').max(100),
   email: z.string().email('Invalid email address')

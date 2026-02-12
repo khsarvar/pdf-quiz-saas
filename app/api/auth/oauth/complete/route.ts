@@ -98,13 +98,19 @@ export async function POST(request: NextRequest) {
   const ipAddress =
     request.headers.get('x-forwarded-for')?.split(',')[0]?.trim().slice(0, 45) || '';
 
+  const authProvider =
+    body?.provider === 'google' || body?.provider === 'microsoft'
+      ? body.provider
+      : null;
+
   if (!user) {
     const passwordHash = await hashPassword(crypto.randomUUID());
     const newUser: NewUser = {
       email,
       name: resolvedName,
       passwordHash,
-      role: 'owner'
+      role: 'owner',
+      authProvider
     };
 
     const [createdUser] = await db.insert(users).values(newUser).returning();

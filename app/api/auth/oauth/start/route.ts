@@ -38,6 +38,7 @@ export async function GET(request: NextRequest) {
   if (priceId) {
     callbackUrl.searchParams.set('priceId', priceId);
   }
+  callbackUrl.searchParams.set('provider', providerInput);
 
   const authorizeUrl = new URL('/auth/v1/authorize', supabaseUrl);
   authorizeUrl.searchParams.set('provider', provider);
