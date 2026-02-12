@@ -14,10 +14,24 @@ export function Login({ mode = 'signin' }: { mode?: 'signin' | 'signup' }) {
   const searchParams = useSearchParams();
   const redirect = searchParams.get('redirect');
   const priceId = searchParams.get('priceId');
+  const oauthError = searchParams.get('error');
   const [state, formAction, pending] = useActionState<ActionState, FormData>(
     mode === 'signin' ? signIn : signUp,
     { error: '' }
   );
+  const oauthSearch = new URLSearchParams();
+  if (redirect) {
+    oauthSearch.set('redirect', redirect);
+  }
+  if (priceId) {
+    oauthSearch.set('priceId', priceId);
+  }
+
+  const getOAuthHref = (provider: 'google' | 'microsoft') => {
+    const providerSearch = new URLSearchParams(oauthSearch);
+    providerSearch.set('provider', provider);
+    return `/api/auth/oauth/start?${providerSearch.toString()}`;
+  };
 
   return (
     <div className="min-h-[100dvh] flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8 bg-gray-50">
@@ -106,6 +120,27 @@ export function Login({ mode = 'signin' }: { mode?: 'signin' | 'signup' }) {
             </Button>
           </div>
         </form>
+
+        {oauthError && (
+          <div className="mt-4 text-red-500 text-sm text-center">
+            Social sign-in failed. Please try again.
+          </div>
+        )}
+
+        <div className="mt-6 space-y-3">
+          <a
+            href={getOAuthHref('google')}
+            className="w-full flex justify-center py-2 px-4 border border-gray-300 rounded-full shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500"
+          >
+            Continue with Google
+          </a>
+          <a
+            href={getOAuthHref('microsoft')}
+            className="w-full flex justify-center py-2 px-4 border border-gray-300 rounded-full shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500"
+          >
+            Continue with Microsoft
+          </a>
+        </div>
 
         <div className="mt-6">
           <div className="relative">
