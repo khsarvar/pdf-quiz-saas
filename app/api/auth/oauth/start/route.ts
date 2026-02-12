@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
   authorizeUrl.searchParams.set('provider', provider);
   authorizeUrl.searchParams.set('redirect_to', callbackUrl.toString());
   if (providerInput === 'microsoft') {
-    authorizeUrl.searchParams.set('scopes', 'email');
+    authorizeUrl.searchParams.set('scopes', 'openid profile email');
   }
 
   return NextResponse.redirect(authorizeUrl);

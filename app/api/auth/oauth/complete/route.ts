@@ -15,6 +15,9 @@ type SupabaseUser = {
   user_metadata?: {
     full_name?: string;
     name?: string;
+    display_name?: string;
+    given_name?: string;
+    family_name?: string;
   };
 };
 
@@ -74,8 +77,13 @@ export async function POST(request: NextRequest) {
   }
 
   const fullName = supabaseUser.user_metadata?.full_name?.trim();
-  const displayName = supabaseUser.user_metadata?.name?.trim();
-  const resolvedName = fullName || displayName || null;
+  const displayName =
+    supabaseUser.user_metadata?.display_name?.trim() ||
+    supabaseUser.user_metadata?.name?.trim();
+  const givenName = supabaseUser.user_metadata?.given_name?.trim();
+  const familyName = supabaseUser.user_metadata?.family_name?.trim();
+  const joinedName = [givenName, familyName].filter(Boolean).join(' ').trim();
+  const resolvedName = fullName || displayName || joinedName || null;
 
   const existingResult = await db
     .select({
