@@ -30,6 +30,18 @@ variable "availability_zones" {
 }
 
 # RDS Configuration
+variable "enable_rds" {
+  description = "Whether to create RDS resources"
+  type        = bool
+  default     = true
+}
+
+variable "enable_web_stack" {
+  description = "Whether to create web-facing AWS resources (ALB + ECS web + web ECR)"
+  type        = bool
+  default     = true
+}
+
 variable "db_instance_class" {
   description = "RDS instance class"
   type        = string

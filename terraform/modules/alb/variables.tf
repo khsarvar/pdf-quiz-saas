@@ -23,3 +23,9 @@ variable "acm_certificate_arn" {
   type        = string
   default     = ""
 }
+
+variable "enabled" {
+  description = "Whether to create ALB resources"
+  type        = bool
+  default     = true
+}

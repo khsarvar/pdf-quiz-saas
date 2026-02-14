@@ -26,16 +26,22 @@ variable "private_subnets" {
 variable "alb_target_group_arn" {
   description = "ARN of the ALB target group"
   type        = string
+  default     = null
+  nullable    = true
 }
 
 variable "alb_security_group_id" {
   description = "ID of the ALB security group"
   type        = string
+  default     = null
+  nullable    = true
 }
 
 variable "web_ecr_repository_url" {
   description = "URL of the web ECR repository"
   type        = string
+  default     = null
+  nullable    = true
 }
 
 variable "worker_ecr_repository_url" {
@@ -97,4 +103,10 @@ variable "quiz_queue_url" {
 variable "sqs_policy_arn" {
   description = "ARN of the SQS IAM policy"
   type        = string
+}
+
+variable "enable_web" {
+  description = "Whether to create web ECS resources"
+  type        = bool
+  default     = true
 }

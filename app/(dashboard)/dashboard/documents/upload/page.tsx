@@ -6,7 +6,6 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
 import { Loader2, Sparkles, FileText } from 'lucide-react';
 import Link from 'next/link';
 
@@ -187,7 +186,6 @@ export default function UploadPage() {
                           type="file"
                           accept=".pdf,.pptx,.doc,.docx,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                           className="sr-only"
-                          required
                           onChange={handleFileChange}
                           disabled={isPending}
                         />

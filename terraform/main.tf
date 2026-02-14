@@ -15,6 +15,7 @@ module "ecr" {
 
   project_name = var.project_name
   environment  = var.environment
+  enable_web   = var.enable_web_stack
 }
 
 # Secrets Manager Module
@@ -47,6 +48,7 @@ locals {
 
 # RDS Module
 module "rds" {
+  count  = var.enable_rds ? 1 : 0
   source = "./modules/rds"
 
   project_name       = var.project_name
@@ -60,6 +62,36 @@ module "rds" {
   db_password        = local.db_password
   db_multi_az        = var.db_multi_az
   ecs_security_group = module.ecs.ecs_security_group_id
+}
+
+moved {
+  from = module.rds.aws_security_group.rds
+  to   = module.rds[0].aws_security_group.rds
+}
+
+moved {
+  from = module.rds.aws_db_subnet_group.main
+  to   = module.rds[0].aws_db_subnet_group.main
+}
+
+moved {
+  from = module.rds.aws_db_parameter_group.main
+  to   = module.rds[0].aws_db_parameter_group.main
+}
+
+moved {
+  from = module.rds.aws_db_instance.main
+  to   = module.rds[0].aws_db_instance.main
+}
+
+moved {
+  from = module.rds.aws_iam_role.rds_monitoring
+  to   = module.rds[0].aws_iam_role.rds_monitoring
+}
+
+moved {
+  from = module.rds.aws_iam_role_policy_attachment.rds_monitoring
+  to   = module.rds[0].aws_iam_role_policy_attachment.rds_monitoring
 }
 
 # SQS Module
@@ -79,19 +111,21 @@ module "alb" {
   vpc_id              = module.vpc.vpc_id
   public_subnets      = module.vpc.public_subnet_ids
   acm_certificate_arn = var.acm_certificate_arn
+  enabled             = var.enable_web_stack
 }
 
 # ECS Module
 module "ecs" {
   source = "./modules/ecs"
 
-  project_name       = var.project_name
-  environment        = var.environment
-  aws_region         = var.aws_region
-  vpc_id             = module.vpc.vpc_id
-  private_subnets    = module.vpc.private_subnet_ids
-  alb_target_group_arn = module.alb.target_group_arn
+  project_name          = var.project_name
+  environment           = var.environment
+  aws_region            = var.aws_region
+  vpc_id                = module.vpc.vpc_id
+  private_subnets       = module.vpc.private_subnet_ids
+  alb_target_group_arn  = module.alb.target_group_arn
   alb_security_group_id = module.alb.alb_security_group_id
+  enable_web            = var.enable_web_stack
 
   # ECR repositories
   web_ecr_repository_url    = module.ecr.web_repository_url

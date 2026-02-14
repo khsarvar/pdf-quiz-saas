@@ -7,3 +7,9 @@ variable "environment" {
   description = "Environment name"
   type        = string
 }
+
+variable "enable_web" {
+  description = "Whether to create web ECR resources"
+  type        = bool
+  default     = true
+}

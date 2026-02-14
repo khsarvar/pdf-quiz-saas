@@ -57,12 +57,12 @@ resource "aws_db_parameter_group" "main" {
 resource "aws_db_instance" "main" {
   identifier = "${var.project_name}-${var.environment}-postgres"
 
-  engine               = "postgres"
-  instance_class       = var.db_instance_class
-  allocated_storage    = 20
+  engine                = "postgres"
+  instance_class        = var.db_instance_class
+  allocated_storage     = 20
   max_allocated_storage = 100
-  storage_type         = "gp3"
-  storage_encrypted    = true
+  storage_type          = "gp3"
+  storage_encrypted     = true
 
   db_name  = var.db_name
   username = var.db_username
@@ -72,19 +72,19 @@ resource "aws_db_instance" "main" {
   vpc_security_group_ids = [aws_security_group.rds.id]
   parameter_group_name   = aws_db_parameter_group.main.name
 
-  multi_az                = var.db_multi_az
-  publicly_accessible     = false
-  deletion_protection     = true
-  skip_final_snapshot     = false
+  multi_az                  = var.db_multi_az
+  publicly_accessible       = false
+  deletion_protection       = false
+  skip_final_snapshot       = true
   final_snapshot_identifier = "${var.project_name}-${var.environment}-final-snapshot"
 
   backup_retention_period = 7
-  backup_window          = "03:00-04:00"
-  maintenance_window     = "Mon:04:00-Mon:05:00"
+  backup_window           = "03:00-04:00"
+  maintenance_window      = "Mon:04:00-Mon:05:00"
 
   performance_insights_enabled = true
-  monitoring_interval         = 60
-  monitoring_role_arn         = aws_iam_role.rds_monitoring.arn
+  monitoring_interval          = 60
+  monitoring_role_arn          = aws_iam_role.rds_monitoring.arn
 
   tags = {
     Name = "${var.project_name}-${var.environment}-postgres"
