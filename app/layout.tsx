@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from 'next';
 import { Manrope } from 'next/font/google';
 import { getUser } from '@/lib/db/queries';
 import { SWRConfig } from 'swr';
+import { Analytics } from '@vercel/analytics/next';
 
 export const metadata: Metadata = {
   title: 'Slide2Quiz',
@@ -37,6 +38,7 @@ export default function RootLayout({
         >
           {children}
         </SWRConfig>
+        <Analytics />
       </body>
     </html>
   );
