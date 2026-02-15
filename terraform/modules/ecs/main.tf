@@ -31,13 +31,16 @@ resource "aws_security_group" "ecs" {
   description = "Security group for ECS tasks"
   vpc_id      = var.vpc_id
 
-  # Allow inbound from ALB
-  ingress {
-    from_port       = 3000
-    to_port         = 3000
-    protocol        = "tcp"
-    security_groups = [var.alb_security_group_id]
-    description     = "HTTP from ALB"
+  # Allow inbound from ALB when web service is enabled
+  dynamic "ingress" {
+    for_each = var.enable_web ? [1] : []
+    content {
+      from_port       = 3000
+      to_port         = 3000
+      protocol        = "tcp"
+      security_groups = [var.alb_security_group_id]
+      description     = "HTTP from ALB"
+    }
   }
 
   egress {
@@ -55,6 +58,7 @@ resource "aws_security_group" "ecs" {
 
 # CloudWatch Log Groups
 resource "aws_cloudwatch_log_group" "web" {
+  count             = var.enable_web ? 1 : 0
   name              = "/ecs/${var.project_name}-${var.environment}/web"
   retention_in_days = 30
 
@@ -140,6 +144,7 @@ resource "aws_iam_role_policy_attachment" "ecs_task_sqs" {
 
 # Web Task Definition
 resource "aws_ecs_task_definition" "web" {
+  count                    = var.enable_web ? 1 : 0
   family                   = "${var.project_name}-${var.environment}-web"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
@@ -183,7 +188,7 @@ resource "aws_ecs_task_definition" "web" {
       logConfiguration = {
         logDriver = "awslogs"
         options = {
-          "awslogs-group"         = aws_cloudwatch_log_group.web.name
+          "awslogs-group"         = aws_cloudwatch_log_group.web[0].name
           "awslogs-region"        = var.aws_region
           "awslogs-stream-prefix" = "web"
         }
@@ -255,9 +260,10 @@ resource "aws_ecs_task_definition" "worker" {
 
 # Web ECS Service
 resource "aws_ecs_service" "web" {
+  count           = var.enable_web ? 1 : 0
   name            = "${var.project_name}-${var.environment}-web"
   cluster         = aws_ecs_cluster.main.id
-  task_definition = aws_ecs_task_definition.web.arn
+  task_definition = aws_ecs_task_definition.web[0].arn
   desired_count   = var.web_desired_count
   launch_type     = "FARGATE"
 
@@ -272,11 +278,11 @@ resource "aws_ecs_service" "web" {
     container_name   = "web"
     container_port   = 3000
   }
-deployment_maximum_percent = 200
-deployment_minimum_healthy_percent = 100
+  deployment_maximum_percent         = 200
+  deployment_minimum_healthy_percent = 100
   #deployment_configuration {
-   # maximum_percent         = 200
-    #minimum_healthy_percent = 100
+  # maximum_percent         = 200
+  #minimum_healthy_percent = 100
   #}
 
   lifecycle {
@@ -302,10 +308,10 @@ resource "aws_ecs_service" "worker" {
     assign_public_ip = false
   }
 
-deployment_maximum_percent = 200
-deployment_minimum_healthy_percent = 100
- # deployment_configuration {
-   # maximum_percent         = 200
+  deployment_maximum_percent         = 200
+  deployment_minimum_healthy_percent = 100
+  # deployment_configuration {
+  # maximum_percent         = 200
   #  minimum_healthy_percent = 50
   #}
 
@@ -320,19 +326,21 @@ deployment_minimum_healthy_percent = 100
 
 # Auto Scaling for Web Service
 resource "aws_appautoscaling_target" "web" {
+  count              = var.enable_web ? 1 : 0
   max_capacity       = 10
   min_capacity       = var.web_desired_count
-  resource_id        = "service/${aws_ecs_cluster.main.name}/${aws_ecs_service.web.name}"
+  resource_id        = "service/${aws_ecs_cluster.main.name}/${aws_ecs_service.web[0].name}"
   scalable_dimension = "ecs:service:DesiredCount"
   service_namespace  = "ecs"
 }
 
 resource "aws_appautoscaling_policy" "web_cpu" {
+  count              = var.enable_web ? 1 : 0
   name               = "${var.project_name}-${var.environment}-web-cpu-scaling"
   policy_type        = "TargetTrackingScaling"
-  resource_id        = aws_appautoscaling_target.web.resource_id
-  scalable_dimension = aws_appautoscaling_target.web.scalable_dimension
-  service_namespace  = aws_appautoscaling_target.web.service_namespace
+  resource_id        = aws_appautoscaling_target.web[0].resource_id
+  scalable_dimension = aws_appautoscaling_target.web[0].scalable_dimension
+  service_namespace  = aws_appautoscaling_target.web[0].service_namespace
 
   target_tracking_scaling_policy_configuration {
     predefined_metric_specification {
@@ -342,6 +350,31 @@ resource "aws_appautoscaling_policy" "web_cpu" {
     scale_in_cooldown  = 300
     scale_out_cooldown = 60
   }
+}
+
+moved {
+  from = aws_cloudwatch_log_group.web
+  to   = aws_cloudwatch_log_group.web[0]
+}
+
+moved {
+  from = aws_ecs_task_definition.web
+  to   = aws_ecs_task_definition.web[0]
+}
+
+moved {
+  from = aws_ecs_service.web
+  to   = aws_ecs_service.web[0]
+}
+
+moved {
+  from = aws_appautoscaling_target.web
+  to   = aws_appautoscaling_target.web[0]
+}
+
+moved {
+  from = aws_appautoscaling_policy.web_cpu
+  to   = aws_appautoscaling_policy.web_cpu[0]
 }
 
 # Auto Scaling for Worker Service

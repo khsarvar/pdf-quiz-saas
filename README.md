@@ -112,6 +112,75 @@ To test Stripe payments, use the following test card details:
 - Expiration: Any future date
 - CVC: Any 3-digit number
 
+## Switch Stripe Account (Dev + Vercel Prod)
+
+Use this runbook when rotating to a new Stripe account.
+
+### Operational policy
+
+- Existing paid users linked to the old Stripe account are downgraded to `free`.
+- Users must re-subscribe in the new Stripe account.
+- `usage_tracking` history is retained (no deletion).
+
+### Local development cutover
+
+1. Update your local `.env` with the new `STRIPE_SECRET_KEY`.
+2. Start a new Stripe CLI listener for this account and copy the secret:
+
+```bash
+stripe listen --forward-to localhost:3000/api/stripe/webhook
+```
+
+3. Set the new webhook secret as `STRIPE_WEBHOOK_SECRET` in `.env`.
+4. Ensure Plus/Pro catalog exists in the new Stripe account:
+
+```bash
+pnpm stripe:bootstrap
+```
+
+5. Preview which active users will be reset:
+
+```bash
+pnpm stripe:reset-links -- --dry-run
+```
+
+6. Execute the reset:
+
+```bash
+pnpm stripe:reset-links
+```
+
+7. Start the app and validate:
+- Checkout works for users previously linked to old `cus_` IDs.
+- Subscription webhook events are accepted.
+- Settings page reflects updated subscription state.
+
+### Vercel production cutover
+
+1. In the new Stripe account, create a webhook for your production endpoint:
+`https://yourdomain.com/api/stripe/webhook`
+2. In Vercel production environment variables, update:
+- `STRIPE_SECRET_KEY`
+- `STRIPE_WEBHOOK_SECRET`
+3. Deploy the application.
+4. Run a production reset against your production database:
+
+```bash
+POSTGRES_URL="your_production_postgres_url" pnpm stripe:reset-links -- --dry-run
+POSTGRES_URL="your_production_postgres_url" pnpm stripe:reset-links
+```
+
+5. Validate end-to-end in production:
+- New checkout creates subscriptions in the new Stripe account.
+- Webhooks are accepted with the new secret.
+- Previous paid users are downgraded and prompted to subscribe again.
+
+### Targeted reset for one user
+
+```bash
+pnpm stripe:reset-links -- --user-email=user@example.com
+```
+
 ## Going to Production
 
 When you're ready to deploy your SaaS application to production, follow these steps:
@@ -138,19 +207,9 @@ In your Vercel project settings (or during deployment), add all the necessary en
 4. `POSTGRES_URL`: Set this to your production database URL.
 5. `AUTH_SECRET`: Set this to a random string. `openssl rand -base64 32` will generate one.
 6. `OPENAI_API_KEY`: Your OpenAI API key for quiz question generation. Get one at https://platform.openai.com/api-keys
-7. `OPENAI_MODEL` (optional): The OpenAI model to use (defaults to `gpt-4o-mini`). Options include `gpt-4o`, `gpt-4o-mini`, `gpt-4-turbo`, etc.
+7. `OPENAI_MODEL` (optional): The OpenAI model to use (defaults to `gpt-5o-nano`).
 8. `R2_ACCOUNT_ID`: Your Cloudflare Account ID
 9. `R2_ACCESS_KEY_ID`: Your R2 Access Key ID
 10. `R2_SECRET_ACCESS_KEY`: Your R2 Secret Access Key
 11. `R2_BUCKET_NAME`: Your R2 bucket name
 12. `R2_PUBLIC_URL` (optional): Public URL for your R2 bucket if using a custom domain
-
-## Other Templates
-
-While this template is intentionally minimal and to be used as a learning resource, there are other paid versions in the community which are more full-featured:
-
-- https://achromatic.dev
-- https://shipfa.st
-- https://makerkit.dev
-- https://zerotoshipped.com
-- https://turbostarter.dev

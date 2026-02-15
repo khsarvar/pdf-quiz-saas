@@ -4,6 +4,7 @@ import {
   ReceiveMessageCommand,
   DeleteMessageCommand,
   GetQueueUrlCommand,
+  ChangeMessageVisibilityCommand,
   type Message,
 } from '@aws-sdk/client-sqs';
 
@@ -178,7 +179,7 @@ export async function receiveMessages(
     MaxNumberOfMessages: maxMessages,
     WaitTimeSeconds: waitTimeSeconds, // Long polling
     MessageAttributeNames: ['All'],
-    VisibilityTimeout: 300, // 5 minutes to process
+    // Uses queue's default visibility timeout (900s for documents, 600s for quizzes)
   });
 
   const response = await client.send(command);
@@ -198,6 +199,26 @@ export async function deleteMessage(
   const command = new DeleteMessageCommand({
     QueueUrl: queueUrl,
     ReceiptHandle: receiptHandle,
+  });
+
+  await client.send(command);
+}
+
+/**
+ * Extend a message's visibility timeout (heartbeat to prevent reprocessing)
+ */
+export async function changeMessageVisibility(
+  queueName: string,
+  receiptHandle: string,
+  visibilityTimeout: number
+): Promise<void> {
+  const client = getSQSClient();
+  const queueUrl = await getQueueUrl(queueName);
+
+  const command = new ChangeMessageVisibilityCommand({
+    QueueUrl: queueUrl,
+    ReceiptHandle: receiptHandle,
+    VisibilityTimeout: visibilityTimeout,
   });
 
   await client.send(command);

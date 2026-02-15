@@ -1,9 +1,5 @@
-import { stripe } from '../payments/stripe';
-import { db } from './drizzle';
-import { users } from './schema';
-import { hashPassword } from '@/lib/auth/session';
-import { PLANS } from '@/lib/subscriptions/plans';
-import { eq } from 'drizzle-orm';
+import { stripe } from '../../lib/payments/stripe';
+import { PLANS } from '../../lib/subscriptions/plans';
 
 async function ensureMonthlyPrice({
   productName,
@@ -58,8 +54,8 @@ async function ensureMonthlyPrice({
   return newPrice.id;
 }
 
-async function createStripeProducts() {
-  console.log('Ensuring Stripe products and prices exist...');
+async function bootstrapCatalog() {
+  console.log('Ensuring Stripe products and monthly prices exist...');
 
   const plusPriceId = await ensureMonthlyPrice({
     productName: 'Plus',
@@ -73,41 +69,13 @@ async function createStripeProducts() {
     unitAmount: PLANS.pro.price,
   });
 
-  console.log('Stripe products and prices are ready.');
-  console.log(`Plus price: ${plusPriceId}`);
-  console.log(`Pro price: ${proPriceId}`);
+  console.log('Stripe catalog is ready.');
+  console.log(`Plus monthly price: ${plusPriceId}`);
+  console.log(`Pro monthly price: ${proPriceId}`);
 }
 
-async function seed() {
-  const email = 'test@test.com';
-  const password = 'admin123';
-  const existingUser = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(eq(users.email, email))
-    .limit(1);
-
-  if (existingUser.length === 0) {
-    const passwordHash = await hashPassword(password);
-    await db.insert(users).values({
-      email,
-      passwordHash,
-      role: 'owner',
-    });
-    console.log('Initial user created.');
-  } else {
-    console.log('Initial user already exists. Skipping user creation.');
-  }
-
-  await createStripeProducts();
-}
-
-seed()
+bootstrapCatalog()
   .catch((error) => {
-    console.error('Seed process failed:', error);
-    process.exit(1);
-  })
-  .finally(() => {
-    console.log('Seed process finished. Exiting...');
-    process.exit(0);
+    console.error('Failed to bootstrap Stripe catalog:', error);
+    process.exitCode = 1;
   });

@@ -5,12 +5,12 @@ output "vpc_id" {
 
 output "alb_dns_name" {
   description = "DNS name of the Application Load Balancer"
-  value       = module.alb.alb_dns_name
+  value       = var.enable_web_stack ? module.alb.alb_dns_name : null
 }
 
 output "alb_zone_id" {
   description = "Zone ID of the Application Load Balancer (for Route53)"
-  value       = module.alb.alb_zone_id
+  value       = var.enable_web_stack ? module.alb.alb_zone_id : null
 }
 
 output "ecs_cluster_name" {
@@ -20,7 +20,7 @@ output "ecs_cluster_name" {
 
 output "web_service_name" {
   description = "Name of the web ECS service"
-  value       = module.ecs.web_service_name
+  value       = var.enable_web_stack ? module.ecs.web_service_name : null
 }
 
 output "worker_service_name" {
@@ -30,7 +30,7 @@ output "worker_service_name" {
 
 output "web_ecr_repository_url" {
   description = "URL of the web ECR repository"
-  value       = module.ecr.web_repository_url
+  value       = var.enable_web_stack ? module.ecr.web_repository_url : null
 }
 
 output "worker_ecr_repository_url" {
@@ -40,7 +40,7 @@ output "worker_ecr_repository_url" {
 
 output "rds_endpoint" {
   description = "Endpoint of the RDS instance"
-  value       = module.rds.db_endpoint
+  value       = var.enable_rds ? module.rds[0].db_endpoint : null
   sensitive   = true
 }
 

@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Loader2, Lock, Trash2 } from 'lucide-react';
-import { updateAccount, updatePassword, deleteAccount } from '@/app/(login)/actions';
+import { updateAccount, updatePassword, deleteAccount, deleteAccountOAuth } from '@/app/(login)/actions';
 import { customerPortalAction } from '@/lib/payments/actions';
 import { User } from '@/lib/db/schema';
 import useSWR from 'swr';
@@ -31,6 +31,11 @@ type PasswordState = {
 
 type DeleteState = {
   password?: string;
+  error?: string;
+  success?: string;
+};
+
+type DeleteOAuthState = {
   error?: string;
   success?: string;
 };
@@ -84,8 +89,7 @@ function AccountForm({
   );
 }
 
-function AccountFormWithData({ state }: { state: ActionState }) {
-  const { data: user } = useSWR<User>('/api/user', fetcher);
+function AccountFormWithData({ state, user }: { state: ActionState; user?: User }) {
   return (
     <AccountForm
       state={state}
@@ -161,6 +165,9 @@ function ManageSubscription() {
 }
 
 export default function GeneralPage() {
+  const { data: user } = useSWR<User>('/api/user', fetcher);
+  const isOAuthUser = !!user?.authProvider;
+
   const [state, formAction, isPending] = useActionState<ActionState, FormData>(
     updateAccount,
     {}
@@ -175,6 +182,9 @@ export default function GeneralPage() {
     DeleteState,
     FormData
   >(deleteAccount, {});
+
+  const [deleteOAuthState, deleteOAuthAction, isDeleteOAuthPending] =
+    useActionState<DeleteOAuthState, FormData>(deleteAccountOAuth, {});
 
   return (
     <section className="flex-1 p-4 lg:p-8">
@@ -194,9 +204,7 @@ export default function GeneralPage() {
         </CardHeader>
         <CardContent>
           <form className="space-y-4" action={formAction}>
-            <Suspense fallback={<AccountForm state={state} />}>
-              <AccountFormWithData state={state} />
-            </Suspense>
+            <AccountFormWithData state={state} user={user} />
             {state.error && (
               <p className="text-red-500 text-sm">{state.error}</p>
             )}
@@ -221,83 +229,87 @@ export default function GeneralPage() {
         </CardContent>
       </Card>
 
-      {/* Password Settings Section */}
-      <Card className="mb-8">
-        <CardHeader>
-          <CardTitle>Password</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form className="space-y-4" action={passwordAction}>
-            <div>
-              <Label htmlFor="current-password" className="mb-2">
-                Current Password
-              </Label>
-              <Input
-                id="current-password"
-                name="currentPassword"
-                type="password"
-                autoComplete="current-password"
-                required
-                minLength={8}
-                maxLength={100}
-                defaultValue={passwordState.currentPassword}
-              />
-            </div>
-            <div>
-              <Label htmlFor="new-password" className="mb-2">
-                New Password
-              </Label>
-              <Input
-                id="new-password"
-                name="newPassword"
-                type="password"
-                autoComplete="new-password"
-                required
-                minLength={8}
-                maxLength={100}
-                defaultValue={passwordState.newPassword}
-              />
-            </div>
-            <div>
-              <Label htmlFor="confirm-password" className="mb-2">
-                Confirm New Password
-              </Label>
-              <Input
-                id="confirm-password"
-                name="confirmPassword"
-                type="password"
-                required
-                minLength={8}
-                maxLength={100}
-                defaultValue={passwordState.confirmPassword}
-              />
-            </div>
-            {passwordState.error && (
-              <p className="text-red-500 text-sm">{passwordState.error}</p>
-            )}
-            {passwordState.success && (
-              <p className="text-green-500 text-sm">{passwordState.success}</p>
-            )}
-            <Button
-              type="submit"
-              className="bg-orange-500 hover:bg-orange-600 text-white"
-              disabled={isPasswordPending}
-            >
-              {isPasswordPending ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Updating...
-                </>
-              ) : (
-                <>
-                  <Lock className="mr-2 h-4 w-4" />
-                  Update Password
-                </>
+      {/* Password Settings Section — hidden for OAuth users */}
+      {!isOAuthUser && (
+        <Card className="mb-8">
+          <CardHeader>
+            <CardTitle>Password</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form className="space-y-4" action={passwordAction}>
+              <div>
+                <Label htmlFor="current-password" className="mb-2">
+                  Current Password
+                </Label>
+                <Input
+                  id="current-password"
+                  name="currentPassword"
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  minLength={8}
+                  maxLength={100}
+                  defaultValue={passwordState.currentPassword}
+                />
+              </div>
+              <div>
+                <Label htmlFor="new-password" className="mb-2">
+                  New Password
+                </Label>
+                <Input
+                  id="new-password"
+                  name="newPassword"
+                  type="password"
+                  autoComplete="new-password"
+                  required
+                  minLength={8}
+                  maxLength={100}
+                  defaultValue={passwordState.newPassword}
+                />
+              </div>
+              <div>
+                <Label htmlFor="confirm-password" className="mb-2">
+                  Confirm New Password
+                </Label>
+                <Input
+                  id="confirm-password"
+                  name="confirmPassword"
+                  type="password"
+                  required
+                  minLength={8}
+                  maxLength={100}
+                  defaultValue={passwordState.confirmPassword}
+                />
+              </div>
+              {passwordState.error && (
+                <p className="text-red-500 text-sm">{passwordState.error}</p>
               )}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+              {passwordState.success && (
+                <p className="text-green-500 text-sm">
+                  {passwordState.success}
+                </p>
+              )}
+              <Button
+                type="submit"
+                className="bg-orange-500 hover:bg-orange-600 text-white"
+                disabled={isPasswordPending}
+              >
+                {isPasswordPending ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Updating...
+                  </>
+                ) : (
+                  <>
+                    <Lock className="mr-2 h-4 w-4" />
+                    Update Password
+                  </>
+                )}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Delete Account Section */}
       <Card>
@@ -308,43 +320,84 @@ export default function GeneralPage() {
           <p className="text-sm text-gray-500 mb-4">
             Account deletion is non-reversable. Please proceed with caution.
           </p>
-          <form action={deleteAction} className="space-y-4">
-            <div>
-              <Label htmlFor="delete-password" className="mb-2">
-                Confirm Password
-              </Label>
-              <Input
-                id="delete-password"
-                name="password"
-                type="password"
-                required
-                minLength={8}
-                maxLength={100}
-                defaultValue={deleteState.password}
-              />
-            </div>
-            {deleteState.error && (
-              <p className="text-red-500 text-sm">{deleteState.error}</p>
-            )}
-            <Button
-              type="submit"
-              variant="destructive"
-              className="bg-red-600 hover:bg-red-700"
-              disabled={isDeletePending}
-            >
-              {isDeletePending ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Deleting...
-                </>
-              ) : (
-                <>
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Delete Account
-                </>
+          {isOAuthUser ? (
+            <form action={deleteOAuthAction} className="space-y-4">
+              <div>
+                <Label htmlFor="delete-confirmation" className="mb-2">
+                  Type <span className="font-bold">DELETE</span> to confirm
+                </Label>
+                <Input
+                  id="delete-confirmation"
+                  name="confirmation"
+                  type="text"
+                  required
+                  placeholder="DELETE"
+                  autoComplete="off"
+                />
+              </div>
+              {deleteOAuthState.error && (
+                <p className="text-red-500 text-sm">
+                  {deleteOAuthState.error}
+                </p>
               )}
-            </Button>
-          </form>
+              <Button
+                type="submit"
+                variant="destructive"
+                className="bg-red-600 hover:bg-red-700"
+                disabled={isDeleteOAuthPending}
+              >
+                {isDeleteOAuthPending ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Delete Account
+                  </>
+                )}
+              </Button>
+            </form>
+          ) : (
+            <form action={deleteAction} className="space-y-4">
+              <div>
+                <Label htmlFor="delete-password" className="mb-2">
+                  Confirm Password
+                </Label>
+                <Input
+                  id="delete-password"
+                  name="password"
+                  type="password"
+                  required
+                  minLength={8}
+                  maxLength={100}
+                  defaultValue={deleteState.password}
+                />
+              </div>
+              {deleteState.error && (
+                <p className="text-red-500 text-sm">{deleteState.error}</p>
+              )}
+              <Button
+                type="submit"
+                variant="destructive"
+                className="bg-red-600 hover:bg-red-700"
+                disabled={isDeletePending}
+              >
+                {isDeletePending ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Delete Account
+                  </>
+                )}
+              </Button>
+            </form>
+          )}
         </CardContent>
       </Card>
     </section>

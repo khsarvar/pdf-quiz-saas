@@ -10,7 +10,7 @@ output "cluster_name" {
 
 output "web_service_name" {
   description = "Name of the web ECS service"
-  value       = aws_ecs_service.web.name
+  value       = var.enable_web ? aws_ecs_service.web[0].name : null
 }
 
 output "worker_service_name" {
@@ -20,7 +20,7 @@ output "worker_service_name" {
 
 output "web_task_definition_arn" {
   description = "ARN of the web task definition"
-  value       = aws_ecs_task_definition.web.arn
+  value       = var.enable_web ? aws_ecs_task_definition.web[0].arn : null
 }
 
 output "worker_task_definition_arn" {
