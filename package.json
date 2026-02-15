@@ -6,6 +6,8 @@
     "start": "next start",
     "db:setup": "npx tsx lib/db/setup.ts",
     "db:seed": "npx tsx lib/db/seed.ts",
+    "stripe:bootstrap": "npx tsx scripts/stripe/bootstrap-catalog.ts",
+    "stripe:reset-links": "npx tsx scripts/stripe/reset-links.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio"

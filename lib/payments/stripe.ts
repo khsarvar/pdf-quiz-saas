@@ -11,6 +11,55 @@ export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: '2025-04-30.basil'
 });
 
+type StripeErrorLike = {
+  code?: string;
+  message?: string;
+  param?: string;
+};
+
+function toStripeError(error: unknown): StripeErrorLike {
+  if (typeof error !== 'object' || error === null) {
+    return {};
+  }
+
+  const maybeError = error as StripeErrorLike;
+  return {
+    code: maybeError.code,
+    message: maybeError.message,
+    param: maybeError.param,
+  };
+}
+
+function isMissingStripeCustomerError(error: unknown) {
+  const stripeError = toStripeError(error);
+  const message = stripeError.message?.toLowerCase() || '';
+  return (
+    (stripeError.code === 'resource_missing' && stripeError.param === 'customer') ||
+    message.includes('no such customer')
+  );
+}
+
+function isMissingStripeProductError(error: unknown) {
+  const stripeError = toStripeError(error);
+  const message = stripeError.message?.toLowerCase() || '';
+  return (
+    (stripeError.code === 'resource_missing' && stripeError.param === 'product') ||
+    message.includes('no such product')
+  );
+}
+
+async function clearUserStripeLinks(userId: number) {
+  await updateUserSubscription(userId, {
+    stripeCustomerId: null,
+    stripeSubscriptionId: null,
+    stripeProductId: null,
+    planName: 'free',
+    subscriptionStatus: null,
+    subscriptionPeriodStart: null,
+    subscriptionPeriodEnd: null,
+  });
+}
+
 export async function createCheckoutSession({
   user,
   priceId
@@ -24,7 +73,7 @@ export async function createCheckoutSession({
     redirect(`/sign-up?redirect=checkout&priceId=${priceId}`);
   }
 
-  const session = await stripe.checkout.sessions.create({
+  const sessionPayload: Stripe.Checkout.SessionCreateParams = {
     payment_method_types: ['card'],
     line_items: [
       {
@@ -38,7 +87,25 @@ export async function createCheckoutSession({
     customer: currentUser.stripeCustomerId || undefined,
     client_reference_id: currentUser.id.toString(),
     allow_promotion_codes: true
-  });
+  };
+
+  let session: Stripe.Checkout.Session;
+  try {
+    session = await stripe.checkout.sessions.create(sessionPayload);
+  } catch (error) {
+    if (currentUser.stripeCustomerId && isMissingStripeCustomerError(error)) {
+      console.warn(
+        `Stripe customer ${currentUser.stripeCustomerId} not found. Clearing stale linkage and retrying checkout for user ${currentUser.id}.`
+      );
+      await clearUserStripeLinks(currentUser.id);
+      session = await stripe.checkout.sessions.create({
+        ...sessionPayload,
+        customer: undefined,
+      });
+    } else {
+      throw error;
+    }
+  }
 
   redirect(session.url!);
 }
@@ -48,67 +115,79 @@ export async function createCustomerPortalSession(user: User) {
     redirect('/pricing');
   }
 
-  let configuration: Stripe.BillingPortal.Configuration;
-  const configurations = await stripe.billingPortal.configurations.list();
+  try {
+    let configuration: Stripe.BillingPortal.Configuration;
+    const configurations = await stripe.billingPortal.configurations.list();
 
-  if (configurations.data.length > 0) {
-    configuration = configurations.data[0];
-  } else {
-    const product = await stripe.products.retrieve(user.stripeProductId);
-    if (!product.active) {
-      throw new Error("User's product is not active in Stripe");
-    }
-
-    const prices = await stripe.prices.list({
-      product: product.id,
-      active: true
-    });
-    if (prices.data.length === 0) {
-      throw new Error("No active prices found for the user's product");
-    }
-
-    configuration = await stripe.billingPortal.configurations.create({
-      business_profile: {
-        headline: 'Manage your subscription'
-      },
-      features: {
-        subscription_update: {
-          enabled: true,
-          default_allowed_updates: ['price', 'quantity', 'promotion_code'],
-          proration_behavior: 'create_prorations',
-          products: [
-            {
-              product: product.id,
-              prices: prices.data.map((price) => price.id)
-            }
-          ]
-        },
-        subscription_cancel: {
-          enabled: true,
-          mode: 'at_period_end',
-          cancellation_reason: {
-            enabled: true,
-            options: [
-              'too_expensive',
-              'missing_features',
-              'switched_service',
-              'unused',
-              'other'
-            ]
-          }
-        },
-        payment_method_update: {
-          enabled: true
-        }
+    if (configurations.data.length > 0) {
+      configuration = configurations.data[0];
+    } else {
+      const product = await stripe.products.retrieve(user.stripeProductId);
+      if (!product.active) {
+        throw new Error("User's product is not active in Stripe");
       }
-    });
-  }
 
-  return stripe.billingPortal.sessions.create({
-    customer: user.stripeCustomerId,
-    return_url: `${process.env.BASE_URL}/dashboard`,
-    configuration: configuration.id
-  });
+      const prices = await stripe.prices.list({
+        product: product.id,
+        active: true
+      });
+      if (prices.data.length === 0) {
+        throw new Error("No active prices found for the user's product");
+      }
+
+      configuration = await stripe.billingPortal.configurations.create({
+        business_profile: {
+          headline: 'Manage your subscription'
+        },
+        features: {
+          subscription_update: {
+            enabled: true,
+            default_allowed_updates: ['price', 'quantity', 'promotion_code'],
+            proration_behavior: 'create_prorations',
+            products: [
+              {
+                product: product.id,
+                prices: prices.data.map((price) => price.id)
+              }
+            ]
+          },
+          subscription_cancel: {
+            enabled: true,
+            mode: 'at_period_end',
+            cancellation_reason: {
+              enabled: true,
+              options: [
+                'too_expensive',
+                'missing_features',
+                'switched_service',
+                'unused',
+                'other'
+              ]
+            }
+          },
+          payment_method_update: {
+            enabled: true
+          }
+        }
+      });
+    }
+
+    return stripe.billingPortal.sessions.create({
+      customer: user.stripeCustomerId,
+      return_url: `${process.env.BASE_URL}/dashboard`,
+      configuration: configuration.id
+    });
+  } catch (error) {
+    if (isMissingStripeCustomerError(error) || isMissingStripeProductError(error)) {
+      console.warn(
+        `Stripe linkage for user ${user.id} points to missing resources. Clearing stale data and redirecting to pricing.`
+      );
+      await clearUserStripeLinks(user.id);
+      redirect('/pricing');
+    }
+
+    throw error;
+  }
 }
 
 export async function handleSubscriptionChange(

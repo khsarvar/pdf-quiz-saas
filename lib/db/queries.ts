@@ -63,7 +63,7 @@ export async function updateUserSubscription(
     stripeSubscriptionId: string | null;
     stripeProductId: string | null;
     planName: string | null;
-    subscriptionStatus: string;
+    subscriptionStatus: string | null;
     subscriptionPeriodStart?: Date | null;
     subscriptionPeriodEnd?: Date | null;
   }
