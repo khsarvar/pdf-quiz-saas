@@ -207,7 +207,7 @@ In your Vercel project settings (or during deployment), add all the necessary en
 4. `POSTGRES_URL`: Set this to your production database URL.
 5. `AUTH_SECRET`: Set this to a random string. `openssl rand -base64 32` will generate one.
 6. `OPENAI_API_KEY`: Your OpenAI API key for quiz question generation. Get one at https://platform.openai.com/api-keys
-7. `OPENAI_MODEL` (optional): The OpenAI model to use (defaults to `gpt-5o-nano`).
+7. `OPENAI_MODEL` (optional): 
 8. `R2_ACCOUNT_ID`: Your Cloudflare Account ID
 9. `R2_ACCESS_KEY_ID`: Your R2 Access Key ID
 10. `R2_SECRET_ACCESS_KEY`: Your R2 Secret Access Key

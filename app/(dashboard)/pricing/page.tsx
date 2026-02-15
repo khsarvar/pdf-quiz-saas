@@ -13,12 +13,24 @@ export default async function PricingPage() {
     getStripeProducts(),
   ]);
 
-  const freePlan = { name: 'Free', price: 0, features: PLANS.free };
-  const plusPlan = products.find((product) => product.name.toLowerCase().includes('plus'));
-  const proPlan = products.find((product) => product.name.toLowerCase().includes('pro'));
+  const plusPlanByName = products.find(
+    (product) => product.name.trim().toLowerCase() === 'plus'
+  );
+  const proPlanByName = products.find(
+    (product) => product.name.trim().toLowerCase() === 'pro'
+  );
 
-  const plusPrice = prices.find((price) => price.productId === plusPlan?.id);
-  const proPrice = prices.find((price) => price.productId === proPlan?.id);
+  const plusPriceByName = prices.find((price) => price.productId === plusPlanByName?.id);
+  const proPriceByName = prices.find((price) => price.productId === proPlanByName?.id);
+  const plusPriceByAmount = prices.find(
+    (price) => price.unitAmount === PLANS.plus.price && price.interval === 'month'
+  );
+  const proPriceByAmount = prices.find(
+    (price) => price.unitAmount === PLANS.pro.price && price.interval === 'month'
+  );
+
+  const plusPrice = plusPriceByName || plusPriceByAmount;
+  const proPrice = proPriceByName || proPriceByAmount;
 
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -37,7 +49,7 @@ export default async function PricingPage() {
           highlight={false}
         />
         <PricingCard
-          name={plusPlan?.name || 'Plus'}
+          name={PLANS.plus.name}
           price={plusPrice?.unitAmount || PLANS.plus.price}
           interval={plusPrice?.interval || 'month'}
           features={[
@@ -51,7 +63,7 @@ export default async function PricingPage() {
           highlight={true}
         />
         <PricingCard
-          name={proPlan?.name || 'Pro'}
+          name={PLANS.pro.name}
           price={proPrice?.unitAmount || PLANS.pro.price}
           interval={proPrice?.interval || 'month'}
           features={[

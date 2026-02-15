@@ -1,6 +1,7 @@
 import Stripe from 'stripe';
 import { redirect } from 'next/navigation';
 import { User } from '@/lib/db/schema';
+import { PLANS } from '@/lib/subscriptions/plans';
 import {
   getUserByStripeCustomerId,
   getUser,
@@ -211,12 +212,13 @@ export async function handleSubscriptionChange(
     const productId = typeof product === 'string' ? product : product?.id;
     const productName = typeof product === 'string' ? null : product?.name;
     const priceNickname = price?.nickname;
+    const unitAmount = price?.unit_amount;
     
     // Determine plan name, but avoid accidentally downgrading when Stripe doesn't expand product info.
     let planName = (user.planName || 'free').toLowerCase();
-    const label = (productName || priceNickname || '').toLowerCase();
-    if (label.includes('plus')) planName = 'plus';
-    if (label.includes('pro')) planName = 'pro';
+    const label = (productName || priceNickname || '').trim().toLowerCase();
+    if (label === 'plus' || unitAmount === PLANS.plus.price) planName = 'plus';
+    if (label === 'pro' || unitAmount === PLANS.pro.price) planName = 'pro';
 
     // Calculate period dates
     const periodStart =
